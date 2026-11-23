@@ -126,7 +126,7 @@ def evaluate(symbol, raw_5m, now):
     sells_allowed = swing == "bearish" and internal == "bearish"
     buys_allowed = swing == "bullish" and internal == "bullish"
     if not (sells_allowed or buys_allowed):
-        return _wait(symbol, "1h swing and 5m internal structure do not align")
+        return _wait(symbol, "1h swing and 1h internal structure do not align")
 
     direction = "sell" if sells_allowed else "buy"
     matching = [z for z in valid if z["side"] == ("supply" if direction == "sell" else "demand")]
@@ -227,5 +227,5 @@ def evaluate(symbol, raw_5m, now):
         "zone_15m":zone, "liquidity_sweep":"confirmed", "market_shift":"5m candle close confirmed",
         "hold_window":"Manage by price action; no fixed holding-time promise",
         "candle_time":str(m5.index[-1]), "valid_until":"next 5-minute candle close",
-        "reason":"1h swing + 5m internal trend aligned; fresh 15m zone in premium/discount; 5m liquidity sweep, close-confirmed MSS and pullback entry; minimum 1:2 R:R."
+        "reason":"1h swing and 1h internal structure aligned; fresh 15m zone in premium/discount; 5m liquidity sweep, close-confirmed MSS and pullback entry; minimum 1:2 R:R."
     }
