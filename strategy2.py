@@ -168,6 +168,7 @@ def evaluate_strategy2(symbol, raw5, raw1, now):
         "direction_15m": direction, "zone_15m": zone,
         "entry": entry, "stop_loss": stop, "take_profit": target,
         "risk_distance": risk, "risk_reward": 2.0,
+        "estimated_profit_inr_proxy": round((75 * 50) * (abs(target-entry) / entry), 2) if entry else 0.0,
         "confirmation_timeframe": confirmation_tf,
         "confirmation_level": confirm["level"],
         "confirmation_time": confirm["confirmation_time"],
@@ -203,6 +204,7 @@ def _send_email(signal):
         f'Confirmed candle time: {signal["candle_time"]} UTC\n\n'
         f'Reason: {signal["reason"]}\n\n'
         'Risk rules: keep risk at or below 1% of account equity; stop for the day at the chosen daily loss limit, profit limit, or maximum trade count. '
+        'The profit figure is only a rough notional proxy; broker contract size, currency conversion, spread and fees can change the actual result. '
         'The bot cannot see your broker balance or enforce account-level limits. Verify the live quote and spread before entering. '
         'This is an alert only; it does not place or close broker orders.'
     )
