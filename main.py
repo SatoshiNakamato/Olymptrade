@@ -23,57 +23,65 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 
+def _as_utc(value):
+    dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _monitor_plan(symbol, candles, plan, now):
+    """Process every completed 5m candle since the last checkpoint, oldest first."""
+    closed = candles[candles["datetime"] + timedelta(minutes=5) <= now].copy()
+    entry_time = _as_utc(plan["candle_time"])
+    checkpoint = _as_utc(plan.get("last_checked_candle", plan["candle_time"]))
+    bars = closed[(closed["datetime"] > entry_time) & (closed["datetime"] > checkpoint)]
+    is_buy = plan["action"] == "BUY"
+    for _, bar in bars.iterrows():
+        high, low, close = float(bar.high), float(bar.low), float(bar.close)
+        stop = float(plan["stop_loss"])
+        target = float(plan["take_profit_2"])
+        stop_hit = low <= stop if is_buy else high >= stop
+        target_hit = high >= target if is_buy else low <= target
+        # If both levels trade inside one OHLC candle, assume stop first.
+        if stop_hit:
+            return "planned stop-loss touched", close, bar.datetime.isoformat()
+        if target_hit:
+            return "planned take-profit touched", close, bar.datetime.isoformat()
+        plan["last_checked_candle"] = bar.datetime.isoformat()
+
+    created = _as_utc(plan["created_at"])
+    if now >= created + timedelta(hours=int(plan["hold_hours"])):
+        last_close = float(closed.close.iloc[-1]) if not closed.empty else float(plan["price"])
+        return f'{plan["hold_hours"]}-hour review window reached', last_close, now.isoformat()
+    return None, None, None
+
+
 def main():
     symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD").split(",") if s.strip()]
     state, now = load_state(), datetime.now(timezone.utc)
-
     in_session, session_reason = london_session_status(now)
     failures = []
+
     for symbol in symbols:
         try:
             candles = fetch_candles(symbol)
             previous = state.get(symbol, {})
-
-            # Monitor an existing theoretical trade plan before looking for a new entry.
             plan = previous.get("active_plan")
             if plan:
-                # Ignore the still-forming 5m candle; only closed bars can trigger plan exits.
-                closed = candles[candles["datetime"] + timedelta(minutes=5) <= now]
-                plan_candle_time = datetime.fromisoformat(plan["candle_time"])
-                closed_after_entry = closed[closed["datetime"] > plan_candle_time]
-                if closed_after_entry.empty:
-                    print(f"Waiting for a completed 5m candle after {symbol} alert")
-                    continue
-                last = closed_after_entry.iloc[-1]
-                high, low, close = float(last.high), float(last.low), float(last.close)
-                is_buy = plan["action"] == "BUY"
-                stop_hit = low <= float(plan["stop_loss"]) if is_buy else high >= float(plan["stop_loss"])
-                target_hit = high >= float(plan["take_profit_2"]) if is_buy else low <= float(plan["take_profit_2"])
-                created = datetime.fromisoformat(plan["created_at"])
-                hold_expired = now >= created + timedelta(hours=int(plan["hold_hours"]))
-
-                # If stop and target are both inside one 5m candle, assume the stop first (conservative).
-                exit_reason = None
-                if stop_hit:
-                    exit_reason = "planned stop-loss level touched"
-                elif target_hit:
-                    exit_reason = "planned take-profit level touched"
-                elif hold_expired:
-                    exit_reason = f'{plan["hold_hours"]}-hour review window reached'
-
-                if exit_reason:
-                    send_exit_alert(symbol, plan["action"], exit_reason, close, plan)
+                reason, price, exit_time = _monitor_plan(symbol, candles, plan, now)
+                if reason:
+                    send_exit_alert(symbol, plan["action"], reason, price, plan)
                     previous.pop("active_plan", None)
-                    previous["last_exit_at"] = now.isoformat()
+                    previous["last_exit_at"] = exit_time
                     state[symbol] = previous
-                    print(f"Exit/review email sent: {symbol}: {exit_reason}")
+                    print(f"Exit/review email sent: {symbol}: {reason} at {price}")
                 else:
-                    print(f"Active trade plan monitored: {symbol}")
-                # Never issue a fresh entry for the same symbol while a plan is active,
-                # or in the same scan that sends its exit notice.
+                    previous["active_plan"] = plan
+                    state[symbol] = previous
+                    print(f"Active plan monitored through {plan.get('last_checked_candle', plan['candle_time'])}")
+                # Do not create a second plan while this one is active.
                 continue
 
-            # Session and news filters block NEW entries, never exit monitoring.
+            # Session/news filters block entries, not monitoring of existing plans.
             if not in_session:
                 print(f"{symbol} new entries skipped: {session_reason}")
                 continue
@@ -90,24 +98,19 @@ def main():
 
             key = f'{symbol}:{signal["action"]}:{signal["candle_time"]}'
             last_time = previous.get("sent_at")
-            cooldown_ok = (
-                not last_time
-                or now - datetime.fromisoformat(last_time) >= timedelta(minutes=20)
-                or previous.get("action") != signal["action"]
-            )
+            cooldown_ok = (not last_time or
+                           now - _as_utc(last_time) >= timedelta(minutes=20) or
+                           previous.get("action") != signal["action"])
             if previous.get("key") == key or not cooldown_ok:
                 print(f"Duplicate/cooldown suppressed: {symbol}")
                 continue
 
             send_alert(signal)
-            state[symbol] = {
-                "key": key, "action": signal["action"], "sent_at": now.isoformat(),
-                "active_plan": {
-                    **signal,
-                    "created_at": now.isoformat(),
-                    "hold_hours": int(signal.get("hold_hours", 5))
-                }
-            }
+            active = {**signal, "created_at": now.isoformat(),
+                      "hold_hours": int(signal.get("hold_hours", 5)),
+                      "last_checked_candle": signal["candle_time"]}
+            state[symbol] = {"key":key, "action":signal["action"],
+                             "sent_at":now.isoformat(), "active_plan":active}
             print(f'Email sent: {signal["action"]} {symbol}')
         except Exception as exc:
             failures.append(f"{symbol}: {exc}")
