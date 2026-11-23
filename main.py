@@ -56,7 +56,7 @@ def _monitor_plan(symbol, candles, plan, now):
 
 
 def main():
-    symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD").split(",") if s.strip()]
+    symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
     state, now = load_state(), datetime.now(timezone.utc)
     in_session, session_reason = london_session_status(now)
     failures = []
@@ -82,7 +82,9 @@ def main():
                 continue
 
             # Session/news filters block entries, not monitoring of existing plans.
-            if not in_session:
+            # FX and gold follow the London-session filter; crypto trades 24/7.
+            is_crypto = symbol.upper().startswith(("BTC/", "ETH/"))
+            if not is_crypto and not in_session:
                 print(f"{symbol} new entries skipped: {session_reason}")
                 continue
             if symbol == "XAU/USD":
