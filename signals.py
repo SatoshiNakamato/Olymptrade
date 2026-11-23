@@ -92,7 +92,7 @@ def evaluate(symbol, raw_5m, now):
         return _wait(symbol, "1h swing structure is unclear")
     internal, _, _ = _structure(h1, 1, 1)
     if internal == "unclear":
-        return _wait(symbol, "5m internal structure is unclear")
+        return _wait(symbol, "1h internal structure is unclear")
 
     # The latest confirmed 1h swing high/low defines the dealing range midpoint.
     range_high, range_low = h1_highs[-1][1], h1_lows[-1][1]
