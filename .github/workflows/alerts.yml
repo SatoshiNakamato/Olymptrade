@@ -54,7 +54,7 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
-          SYMBOLS: EUR/USD,XAU/USD
+          SYMBOLS: EUR/USD,XAU/USD,BTC/USD
         run: python main.py
       - name: Scan markets with Strategy 2 and email confirmed signals
         if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
@@ -63,7 +63,7 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
-          SYMBOLS: EUR/USD,XAU/USD
+          SYMBOLS: EUR/USD,XAU/USD,BTC/USD
         run: python strategy2.py
       - name: Save Strategy 2 alert state
         if: always()
