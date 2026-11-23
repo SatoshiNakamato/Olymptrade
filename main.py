@@ -2,7 +2,7 @@ import json, os
 from datetime import datetime, timezone, timedelta
 from market_data import fetch_candles
 from signals import evaluate
-from email_alerts import send_alert
+from email_alerts import send_alert\nfrom market_filters import london_session_status, usd_high_impact_news_status
 
 STATE_PATH = ".signal_state.json"
 
