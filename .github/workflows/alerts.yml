@@ -32,6 +32,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Check Python syntax
+        run: python -m compileall -q .
       - name: Send test email
         if: github.event_name == 'workflow_dispatch' && inputs.send_test_email
         env:
