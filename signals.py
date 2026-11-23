@@ -63,7 +63,7 @@ def _wait(symbol,reason):
 
 
 def _entry_sequence(m5,direction,z15):
-    ztime=pd.Timestamp(z15["created_time"])
+    ztime=pd.Timestamp(z15["created_time"]) + pd.Timedelta(minutes=15)
     touched=[i for i,t in enumerate(m5.index) if t>=ztime and m5.low.iloc[i]<=z15["high"] and m5.high.iloc[i]>=z15["low"]]
     if not touched: return None
     first=touched[0]; highs,lows=_pivots(m5,2,2)
@@ -111,7 +111,8 @@ def evaluate(symbol,raw_5m,now):
     swing,hh,hl=_structure(h1,3,3); internal,_,_=_structure(h1,1,1)
     if swing=="unclear" or internal=="unclear": return _wait(symbol,"1h swing or internal structure unclear")
     # Internal direction is tradable; swing remains the higher-timeframe context.
-    direction="buy" if internal=="bullish" else "sell"
+    direction="buy" if swing=="bullish" else "sell"
+    if internal != swing: return _wait(symbol,"1h swing and internal structures do not align")
     if len(hh)<2 or len(hl)<2: return _wait(symbol,"Insufficient confirmed 1h swing points")
     midpoint=(hh[-1][1]+hl[-1][1])/2
     side="demand" if direction=="buy" else "supply"
