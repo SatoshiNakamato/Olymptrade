@@ -140,7 +140,9 @@ def evaluate_strategy2(symbol, raw5, raw1, now):
     confirm = _find_mss(m5, side, zone, now)
     confirmation_tf = "5m"
     # If the 5m confirmation pivot is materially distant from the zone, use 1m structure.
-    if confirm and confirm["distance"] > 1.5 * float(_atr(m5).iloc[-1]) and not m1.empty:
+    if confirm and confirm["distance"] > 1.5 * float(_atr(m5).iloc[-1]):
+        if m1.empty:
+            return {"symbol": symbol, "action": "WAIT", "reason": "5m confirmation level too far from zone; request 1m fallback"}
         confirm = _find_mss(m1, side, zone, now)
         confirmation_tf = "1m"
     if not confirm:
@@ -220,7 +222,7 @@ def main():
             raw1 = None
             # The 1m fallback is only requested when needed; fetch after 5m evaluation.
             signal = evaluate_strategy2(symbol, raw5, None, now)
-            if signal["action"] == "WAIT" and "market-structure shift" in signal.get("reason", ""):
+            if signal["action"] == "WAIT" and ("market-structure shift" in signal.get("reason", "") or "1m fallback" in signal.get("reason", "")):
                 raw1 = fetch_candles(symbol, interval="1min")
                 signal = evaluate_strategy2(symbol, raw5, raw1, now)
             if not in_session:
