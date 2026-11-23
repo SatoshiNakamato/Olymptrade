@@ -1,6 +1,12 @@
 name: Market signal email alerts
 on:
   workflow_dispatch:
+    inputs:
+      send_test_email:
+        description: "Send a test email instead of scanning markets"
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: "*/5 * * * *"
 permissions:
@@ -26,7 +32,15 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Send test email
+        if: github.event_name == 'workflow_dispatch' && inputs.send_test_email
+        env:
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_TO: Ineed2pnaga@gmail.com
+        run: python send_test_email.py
       - name: Scan markets and email confirmed signals
+        if: ${{ !inputs.send_test_email }}
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
