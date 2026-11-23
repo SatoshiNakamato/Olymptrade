@@ -8,7 +8,7 @@ from market_data import fetch_candles
 from market_filters import london_session_status, usd_high_impact_news_status
 
 STATE_PATH = ".strategy2_state.json"
-SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD").split(",") if s.strip()]
+SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
 
 
 def _closed(raw, minutes, now):
@@ -232,7 +232,9 @@ def main():
             if signal["action"] == "WAIT" and ("market-structure shift" in signal.get("reason", "") or "1m fallback" in signal.get("reason", "")):
                 raw1 = fetch_candles(symbol, interval="1min")
                 signal = evaluate_strategy2(symbol, raw5, raw1, now)
-            if not in_session:
+            # FX and gold follow the London-session filter; crypto trades 24/7.
+            is_crypto = symbol.upper().startswith(("BTC/", "ETH/"))
+            if not is_crypto and not in_session:
                 print(f"Strategy 2 {symbol}: WAIT — {why}")
                 continue
             if symbol == "XAU/USD":
