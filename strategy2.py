@@ -201,6 +201,7 @@ def _send_email(signal):
         f'Take-profit (2R): {fmt(signal["take_profit"])}\n'
         f'Risk/reward: 1:2\n'
         f'Estimated review window: {signal["hold_hours"]} hours (not a guaranteed holding time)\n'
+        f'Estimated gross profit: about ₹{signal["estimated_profit_inr_proxy"]:.2f} (₹75 margin × 50x exposure proxy; before costs)\n'
         f'Confirmed candle time: {signal["candle_time"]} UTC\n\n'
         f'Reason: {signal["reason"]}\n\n'
         'Risk rules: keep risk at or below 1% of account equity; stop for the day at the chosen daily loss limit, profit limit, or maximum trade count. '
