@@ -28,8 +28,8 @@ def _pivots(df, left=PIVOT_LEFT, right=PIVOT_RIGHT):
     return highs, lows
 
 
-def _structure(df):
-    highs, lows = _pivots(df)
+def _structure(df, left=2, right=2):
+    highs, lows = _pivots(df, left, right)
     if len(highs) < 2 or len(lows) < 2:
         return "unclear", highs, lows
     hh = highs[-1][1] > highs[-2][1]
@@ -87,10 +87,10 @@ def evaluate(symbol, raw_5m, now):
     if len(m5) < 80 or len(m15) < 40 or len(h1) < 30:
         return _wait(symbol, "Insufficient closed candles for structure analysis")
 
-    swing, h1_highs, h1_lows = _structure(h1)
+    swing, h1_highs, h1_lows = _structure(h1, 3, 3)
     if swing == "unclear" or len(h1_highs) < 2 or len(h1_lows) < 2:
         return _wait(symbol, "1h swing structure is unclear")
-    internal, _, _ = _structure(m5)
+    internal, _, _ = _structure(h1, 1, 1)
     if internal == "unclear":
         return _wait(symbol, "5m internal structure is unclear")
 
@@ -223,7 +223,7 @@ def evaluate(symbol, raw_5m, now):
         "entry_zone_high":setup["zone_high"], "stop_loss":stop,
         "take_profit_1":entry + (1 if direction=="buy" else -1)*risk,
         "take_profit_2":target, "risk_distance":risk, "risk_reward":round(abs(target-entry)/risk,2),
-        "swing_trend_1h":swing, "internal_trend_5m":internal,
+        "swing_trend_1h":swing, "internal_trend_1h":internal,
         "zone_15m":zone, "liquidity_sweep":"confirmed", "market_shift":"5m candle close confirmed",
         "hold_window":"Manage by price action; no fixed holding-time promise",
         "candle_time":str(m5.index[-1]), "valid_until":"next 5-minute candle close",
