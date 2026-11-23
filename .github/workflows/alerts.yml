@@ -26,6 +26,12 @@ jobs:
           path: .signal_state.json
           key: signal-state-${{ github.run_id }}
           restore-keys: signal-state-
+      - name: Restore Strategy 2 alert state
+        uses: actions/cache/restore@v4
+        with:
+          path: .strategy2_state.json
+          key: strategy2-state-${{ github.run_id }}
+          restore-keys: strategy2-state-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -50,6 +56,21 @@ jobs:
           ALERT_TO: Ineed2pnaga@gmail.com
           SYMBOLS: EUR/USD,XAU/USD
         run: python main.py
+      - name: Scan markets with Strategy 2 and email confirmed signals
+        if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_TO: Ineed2pnaga@gmail.com
+          SYMBOLS: EUR/USD,XAU/USD
+        run: python strategy2.py
+      - name: Save Strategy 2 alert state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .strategy2_state.json
+          key: strategy2-state-${{ github.run_id }}
       - name: Save alert cooldown state
         if: always()
         uses: actions/cache/save@v4
