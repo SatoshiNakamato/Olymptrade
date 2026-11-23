@@ -217,7 +217,21 @@ def evaluate(symbol, raw_5m, now):
             return _wait(symbol, "Next opposing 5m liquidity is too close; less than 1:2 reward-to-risk")
         target = next_zone
 
-    action = "BUY NOW" if direction == "buy" else "SELL NOW"
+    # Estimate a review horizon from target distance versus recent 5m true range.
+    # This is a planning estimate, not a prediction or guaranteed time to target.
+    prev_close = m5["close"].shift(1)
+    true_range = pd.concat([
+        m5["high"] - m5["low"],
+        (m5["high"] - prev_close).abs(),
+        (m5["low"] - prev_close).abs()
+    ], axis=1).max(axis=1)
+    atr5 = float(true_range.rolling(14).mean().iloc[-1])
+    if pd.isna(atr5) or atr5 <= 0:
+        return _wait(symbol, "Unable to estimate a holding window from recent volatility")
+    estimated_minutes = abs(target - entry) / atr5 * 5.0
+    hold_hours = 5 if estimated_minutes <= 300 else (12 if estimated_minutes <= 720 else 24)
+
+    action = "BUY" if direction == "buy" else "SELL"
     return {
         "symbol":symbol, "action":action, "price":entry, "entry_zone_low":setup["zone_low"],
         "entry_zone_high":setup["zone_high"], "stop_loss":stop,
@@ -225,7 +239,8 @@ def evaluate(symbol, raw_5m, now):
         "take_profit_2":target, "risk_distance":risk, "risk_reward":round(abs(target-entry)/risk,2),
         "swing_trend_1h":swing, "internal_trend_1h":internal,
         "zone_15m":zone, "liquidity_sweep":"confirmed", "market_shift":"5m candle close confirmed",
-        "hold_window":"Manage by price action; no fixed holding-time promise",
+        "hold_hours":hold_hours, "hold_window_estimated_minutes":round(estimated_minutes),
+        "hold_window":"Estimated review window; exit earlier at stop, target, or invalidation",
         "candle_time":str(m5.index[-1]), "valid_until":"next 5-minute candle close",
         "reason":"1h swing and 1h internal structure aligned; fresh 15m zone in premium/discount; 5m liquidity sweep, close-confirmed MSS and pullback entry; minimum 1:2 R:R."
     }
