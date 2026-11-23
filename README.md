@@ -7,7 +7,7 @@ Alert-only market analysis for EUR/USD and XAU/USD. The bot does not connect to 
 The scanner evaluates completed candles only and requires every gate below:
 
 1. **1-hour swing structure:** higher highs/higher lows for buys or lower highs/lower lows for sells. Unclear structure means WAIT.
-2. **Internal structure:** the 5-minute internal trend must align with the 1-hour swing trend. Countertrend internal moves are skipped.
+2. **1-hour internal structure:** smaller 1-hour pivots are tracked separately from the larger 1-hour swing pivots. The strongest setups require both structures to align; if they conflict or are unclear, the bot waits. The 5-minute chart is reserved for the liquidity sweep, market shift and entry sequence.
 3. **15-minute zone:** a fresh demand zone must be below the 1-hour dealing-range midpoint (discount) for buys; a fresh supply zone must be above it (premium). Zones are identified from displacement candles that close beyond recent structure.
 4. **5-minute liquidity sweep:** price must wick beyond a recent high/low and close back inside, while interacting with the selected 15-minute zone.
 5. **Market structure shift:** a completed 5-minute candle must close beyond the prior internal swing level. A wick alone is not confirmation.
