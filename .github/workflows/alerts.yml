@@ -1,0 +1,42 @@
+name: Market signal email alerts
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+permissions:
+  contents: read
+concurrency:
+  group: market-alerts
+  cancel-in-progress: false
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore alert cooldown state
+        uses: actions/cache/restore@v4
+        with:
+          path: .signal_state.json
+          key: signal-state-${{ github.run_id }}
+          restore-keys: signal-state-
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Scan markets and email confirmed signals
+        env:
+          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERT_TO: Ineed2pnaga@gmail.com
+          SYMBOLS: EUR/USD,XAU/USD
+        run: python main.py
+      - name: Save alert cooldown state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .signal_state.json
+          key: signal-state-${{ github.run_id }}
