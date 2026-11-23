@@ -28,19 +28,9 @@ def main():
     state, now = load_state(), datetime.now(timezone.utc)
 
     in_session, session_reason = london_session_status(now)
-    if not in_session:
-        print(f"Market scan skipped: {session_reason}")
-        return
-
     failures = []
     for symbol in symbols:
         try:
-            if symbol == "XAU/USD":
-                news_ok, news_reason = usd_high_impact_news_status(now)
-                if not news_ok:
-                    print(f"XAU/USD skipped: {news_reason}")
-                    continue
-
             candles = fetch_candles(symbol)
             previous = state.get(symbol, {})
 
@@ -75,6 +65,16 @@ def main():
                 # Never issue a fresh entry for the same symbol while a plan is active,
                 # or in the same scan that sends its exit notice.
                 continue
+
+            # Session and news filters block NEW entries, never exit monitoring.
+            if not in_session:
+                print(f"{symbol} new entries skipped: {session_reason}")
+                continue
+            if symbol == "XAU/USD":
+                news_ok, news_reason = usd_high_impact_news_status(now)
+                if not news_ok:
+                    print(f"XAU/USD new entry skipped: {news_reason}")
+                    continue
 
             signal = evaluate(symbol, candles, now)
             print(json.dumps(signal, default=str))
