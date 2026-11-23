@@ -112,11 +112,11 @@ def evaluate(symbol, raw_5m, now):
             continue
         touched_after = m15.iloc[z["created"]+1:]
         if z["side"] == "supply":
-            mitigated = (touched_after.high >= z["low"]).any()
+            mitigated = (touched_after.close > z["high"]).any()
             if z["low"] > midpoint and not mitigated:
                 valid.append(z)
         else:
-            mitigated = (touched_after.low <= z["high"]).any()
+            mitigated = (touched_after.close < z["low"]).any()
             if z["high"] < midpoint and not mitigated:
                 valid.append(z)
     if not valid:
