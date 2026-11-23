@@ -26,6 +26,7 @@ def send_alert(signal):
         f'TP1 (1R): {_price(signal["take_profit_1"], symbol)}\n'
         f'TP2 / opposing liquidity: {_price(signal["take_profit_2"], symbol)}\n'
         f'Risk-to-reward: 1:{signal["risk_reward"]:.2f}\n'
+        f'Suggested review/holding window: {signal.get("hold_hours", 5)} hours (estimate, not a guaranteed duration)\n'
         f'1h swing trend: {signal["swing_trend_1h"]}\n'
         f'1h internal structure: {signal["internal_trend_1h"]}\n'
         f'15m zone: {signal["zone_15m"]["side"]} '
@@ -40,6 +41,30 @@ def send_alert(signal):
         'this alert-only bot cannot see your account balance, filled orders, or realized P/L and cannot enforce them. '
         'Do not enter if the quote has moved outside the entry zone, the signal expired, the spread is abnormal, '
         'or a major USD news blackout is active. No setup is guaranteed. The bot does not place or manage orders.'
+    )
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
+        smtp.login(sender, password)
+        smtp.send_message(msg)
+
+
+
+def send_exit_alert(symbol, action, reason, price, plan):
+    sender = os.environ["GMAIL_SENDER"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
+    recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
+    msg = EmailMessage()
+    msg["Subject"] = f"TRADE PLAN EXIT: {symbol} | {reason}"
+    msg["From"], msg["To"] = sender, recipient
+    msg.set_content(
+        f"EXIT / REVIEW ALERT — {symbol}\n"
+        f"Plan direction: {plan['action']}\n"
+        f"Reason: {reason}\n"
+        f"Latest closed 5m price: {_price(price, symbol)}\n"
+        f"Planned entry reference: {_price(plan['price'], symbol)}\n"
+        f"Planned stop loss: {_price(plan['stop_loss'], symbol)}\n"
+        f"Planned take profit: {_price(plan['take_profit_2'], symbol)}\n\n"
+        "This monitors the theoretical alert plan only. It cannot verify that you entered, "
+        "or close a position on Olymptrade. Check your actual open position and broker quote."
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
