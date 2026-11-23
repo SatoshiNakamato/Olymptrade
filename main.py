@@ -37,7 +37,14 @@ def main():
             # Monitor an existing theoretical trade plan before looking for a new entry.
             plan = previous.get("active_plan")
             if plan:
-                last = candles.iloc[-1]
+                # Ignore the still-forming 5m candle; only closed bars can trigger plan exits.
+                closed = candles[candles["datetime"] + timedelta(minutes=5) <= now]
+                plan_candle_time = datetime.fromisoformat(plan["candle_time"])
+                closed_after_entry = closed[closed["datetime"] > plan_candle_time]
+                if closed_after_entry.empty:
+                    print(f"Waiting for a completed 5m candle after {symbol} alert")
+                    continue
+                last = closed_after_entry.iloc[-1]
                 high, low, close = float(last.high), float(last.low), float(last.close)
                 is_buy = plan["action"] == "BUY"
                 stop_hit = low <= float(plan["stop_loss"]) if is_buy else high >= float(plan["stop_loss"])
