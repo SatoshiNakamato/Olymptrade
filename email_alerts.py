@@ -27,7 +27,7 @@ def send_alert(signal):
         f'TP2 / opposing liquidity: {_price(signal["take_profit_2"], symbol)}\n'
         f'Risk-to-reward: 1:{signal["risk_reward"]:.2f}\n'
         f'1h swing trend: {signal["swing_trend_1h"]}\n'
-        f'5m internal trend: {signal["internal_trend_5m"]}\n'
+        f'1h internal structure: {signal["internal_trend_1h"]}\n'
         f'15m zone: {signal["zone_15m"]["side"]} '
         f'({_price(signal["zone_15m"]["low"], symbol)}–{_price(signal["zone_15m"]["high"], symbol)})\n'
         f'Liquidity sweep: {signal["liquidity_sweep"]}\n'
