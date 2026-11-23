@@ -1,246 +1,154 @@
 import pandas as pd
 
-# Price-action rules are deliberately explicit and conservative.
-PIVOT_LEFT = 2
-PIVOT_RIGHT = 2
-SWEEP_LOOKBACK = 12
-ZONE_LOOKBACK = 24
 MIN_RR = 2.0
+SWEEP_LOOKBACK = 12
 
 
-def _resample(df, minutes, now):
-    indexed = df.set_index("datetime").sort_index()
-    bars = indexed.resample(f"{minutes}min", label="left", closed="left").agg({
-        "open": "first", "high": "max", "low": "min", "close": "last"
-    }).dropna()
-    return bars[bars.index + pd.Timedelta(minutes=minutes) <= now]
+def _resample(raw, minutes, now):
+    d = raw.set_index("datetime").sort_index()
+    b = d.resample(f"{minutes}min", label="left", closed="left").agg(
+        {"open":"first","high":"max","low":"min","close":"last"}).dropna()
+    return b[b.index + pd.Timedelta(minutes=minutes) <= now]
 
 
-def _pivots(df, left=PIVOT_LEFT, right=PIVOT_RIGHT):
-    highs, lows = [], []
-    for i in range(left, len(df) - right):
-        h = float(df["high"].iloc[i])
-        l = float(df["low"].iloc[i])
-        if h >= float(df["high"].iloc[i-left:i+right+1].max()):
-            highs.append((i, h))
-        if l <= float(df["low"].iloc[i-left:i+right+1].min()):
-            lows.append((i, l))
-    return highs, lows
+def _pivots(df, left=2, right=2):
+    hi, lo = [], []
+    for i in range(left, len(df)-right):
+        w = df.iloc[i-left:i+right+1]
+        if df.high.iloc[i] == w.high.max(): hi.append((i,float(df.high.iloc[i])))
+        if df.low.iloc[i] == w.low.min(): lo.append((i,float(df.low.iloc[i])))
+    return hi, lo
 
 
 def _structure(df, left=2, right=2):
-    highs, lows = _pivots(df, left, right)
-    if len(highs) < 2 or len(lows) < 2:
-        return "unclear", highs, lows
-    hh = highs[-1][1] > highs[-2][1]
-    hl = lows[-1][1] > lows[-2][1]
-    lh = highs[-1][1] < highs[-2][1]
-    ll = lows[-1][1] < lows[-2][1]
-    if hh and hl:
-        return "bullish", highs, lows
-    if lh and ll:
-        return "bearish", highs, lows
-    return "unclear", highs, lows
+    h,l = _pivots(df,left,right)
+    if len(h)<2 or len(l)<2: return "unclear",h,l
+    if h[-1][1]>h[-2][1] and l[-1][1]>l[-2][1]: return "bullish",h,l
+    if h[-1][1]<h[-2][1] and l[-1][1]<l[-2][1]: return "bearish",h,l
+    return "unclear",h,l
 
 
-def _zones_15m(df):
-    """Find recent order-block-like zones only when displacement closes through structure."""
-    highs, lows = _pivots(df)
-    zones = []
-    start = max(5, len(df) - 80)
-    for i in range(start, len(df)):
-        row = df.iloc[i]
-        body = abs(float(row.close) - float(row.open))
-        prior = df.iloc[max(0, i-12):i]
-        if len(prior) < 5:
-            continue
-        prior_high, prior_low = float(prior.high.max()), float(prior.low.min())
-        atr = float((prior.high - prior.low).rolling(10).mean().iloc[-1])
-        if pd.isna(atr) or atr <= 0 or body < 1.2 * atr:
-            continue
-        if float(row.close) > prior_high and row.close > row.open:
-            candidates = [j for j in range(max(0, i-5), i) if df.iloc[j].close < df.iloc[j].open]
-            if candidates:
-                j = candidates[-1]
-                zones.append({"side":"demand","low":float(df.low.iloc[j]),
-                              "high":float(df.open.iloc[j]),"time":str(df.index[j]),
-                              "created":i})
-        if float(row.close) < prior_low and row.close < row.open:
-            candidates = [j for j in range(max(0, i-5), i) if df.iloc[j].close > df.iloc[j].open]
-            if candidates:
-                j = candidates[-1]
-                zones.append({"side":"supply","low":float(df.open.iloc[j]),
-                              "high":float(df.high.iloc[j]),"time":str(df.index[j]),
-                              "created":i})
-    return zones
+def _atr(df):
+    p=df.close.shift(1)
+    tr=pd.concat([df.high-df.low,(df.high-p).abs(),(df.low-p).abs()],axis=1).max(axis=1)
+    return tr.rolling(14).mean()
 
 
-def _wait(symbol, reason, **extra):
-    result = {"symbol":symbol, "action":"WAIT", "reason":reason}
-    result.update(extra)
-    return result
+def _bos_zones(df,left=2,right=2,lookback=120):
+    """A zone exists only after displacement closes beyond a previously confirmed pivot."""
+    hs,ls=_pivots(df,left,right); atr=_atr(df); out=[]
+    for i in range(max(left+right+2,len(df)-lookback),len(df)):
+        a=atr.iloc[i]
+        if pd.isna(a) or a<=0 or abs(float(df.close.iloc[i]-df.open.iloc[i]))<1.2*float(a): continue
+        ph=next((p for p in reversed(hs) if p[0]+right<i and p[0]>=i-30),None)
+        pl=next((p for p in reversed(ls) if p[0]+right<i and p[0]>=i-30),None)
+        if ph and df.close.iloc[i]>df.open.iloc[i] and df.close.iloc[i]>ph[1]:
+            origins=[j for j in range(max(0,i-6),i) if df.close.iloc[j]<df.open.iloc[j]]
+            if origins:
+                j=origins[-1]; out.append({"side":"demand","low":float(df.low.iloc[j]),"high":float(df.open.iloc[j]),"created":i,"created_time":df.index[i].isoformat(),"bos_level":ph[1]})
+        if pl and df.close.iloc[i]<df.open.iloc[i] and df.close.iloc[i]<pl[1]:
+            origins=[j for j in range(max(0,i-6),i) if df.close.iloc[j]>df.open.iloc[j]]
+            if origins:
+                j=origins[-1]; out.append({"side":"supply","low":float(df.open.iloc[j]),"high":float(df.high.iloc[j]),"created":i,"created_time":df.index[i].isoformat(),"bos_level":pl[1]})
+    return out
 
 
-def evaluate(symbol, raw_5m, now):
-    frames = {m: _resample(raw_5m, m, now) for m in (5, 15, 60)}
-    m5, m15, h1 = frames[5], frames[15], frames[60]
-    if len(m5) < 80 or len(m15) < 40 or len(h1) < 30:
-        return _wait(symbol, "Insufficient closed candles for structure analysis")
+def _invalid(df,z):
+    later=df.iloc[z["created"]+1:]
+    return bool((later.close>z["high"]).any()) if z["side"]=="supply" else bool((later.close<z["low"]).any())
 
-    swing, h1_highs, h1_lows = _structure(h1, 3, 3)
-    if swing == "unclear" or len(h1_highs) < 2 or len(h1_lows) < 2:
-        return _wait(symbol, "1h swing structure is unclear")
-    internal, _, _ = _structure(h1, 1, 1)
-    if internal == "unclear":
-        return _wait(symbol, "1h internal structure is unclear")
 
-    # The latest confirmed 1h swing high/low defines the dealing range midpoint.
-    range_high, range_low = h1_highs[-1][1], h1_lows[-1][1]
-    if range_high <= range_low:
-        return _wait(symbol, "Invalid 1h dealing range")
-    midpoint = (range_high + range_low) / 2.0
-    price = float(m5.close.iloc[-1])
-    zones = _zones_15m(m15)
-    if not zones:
-        return _wait(symbol, "No valid 15m supply/demand zone formed by displacement and structure break")
+def _wait(symbol,reason):
+    return {"symbol":symbol,"action":"WAIT","reason":reason}
 
-    # Only use a zone created by a completed 15m candle, still unmitigated, and on the correct side of midpoint.
-    latest15 = len(m15) - 1
-    valid = []
-    for z in zones:
-        if z["created"] >= latest15:
-            continue
-        touched_after = m15.iloc[z["created"]+1:]
-        if z["side"] == "supply":
-            mitigated = (touched_after.close > z["high"]).any()
-            if z["low"] > midpoint and not mitigated:
-                valid.append(z)
+
+def _entry_sequence(m5,direction,z15):
+    ztime=pd.Timestamp(z15["created_time"])
+    touched=[i for i,t in enumerate(m5.index) if t>=ztime and m5.low.iloc[i]<=z15["high"] and m5.high.iloc[i]>=z15["low"]]
+    if not touched: return None
+    first=touched[0]; highs,lows=_pivots(m5,2,2)
+    for si in range(max(first+1,len(m5)-36),len(m5)-2):
+        sw=m5.iloc[si]; prior=m5.iloc[max(first,si-SWEEP_LOOKBACK):si]
+        if len(prior)<3: continue
+        if direction=="sell":
+            level=float(prior.high.max())
+            if sw.high<=level or sw.close>=level: continue
+            piv=[p for p in lows if first<=p[0]<si and p[0]+2<si]
+            if not piv: continue
+            mss=piv[-1][1]
+            shifts=[k for k in range(si+1,len(m5)) if m5.close.iloc[k]<mss]
+            if not shifts: continue
+            mi=shifts[0]; origins=[j for j in range(si,mi) if m5.close.iloc[j]>m5.open.iloc[j]]
+            if not origins: continue
+            oi=origins[-1]; zl,zh=float(m5.open.iloc[oi]),float(m5.high.iloc[oi])
+            pb=m5.iloc[mi+1:]
+            if pb.empty or not ((pb.high>=zl)&(pb.low<=zh)).any(): continue
+            last=m5.iloc[-1]
+            if last.high<zl or last.low>zh: continue
+            return {"zone_low":zl,"zone_high":zh,"sweep_extreme":float(sw.high),"sweep_time":m5.index[si].isoformat(),"shift_time":m5.index[mi].isoformat(),"mss_level":mss}
         else:
-            mitigated = (touched_after.close < z["low"]).any()
-            if z["high"] < midpoint and not mitigated:
-                valid.append(z)
-    if not valid:
-        return _wait(symbol, "Price has no fresh 15m zone in the correct premium/discount half")
+            level=float(prior.low.min())
+            if sw.low>=level or sw.close<=level: continue
+            piv=[p for p in highs if first<=p[0]<si and p[0]+2<si]
+            if not piv: continue
+            mss=piv[-1][1]
+            shifts=[k for k in range(si+1,len(m5)) if m5.close.iloc[k]>mss]
+            if not shifts: continue
+            mi=shifts[0]; origins=[j for j in range(si,mi) if m5.close.iloc[j]<m5.open.iloc[j]]
+            if not origins: continue
+            oi=origins[-1]; zl,zh=float(m5.low.iloc[oi]),float(m5.open.iloc[oi])
+            pb=m5.iloc[mi+1:]
+            if pb.empty or not ((pb.low<=zh)&(pb.high>=zl)).any(): continue
+            last=m5.iloc[-1]
+            if last.high<zl or last.low>zh: continue
+            return {"zone_low":zl,"zone_high":zh,"sweep_extreme":float(sw.low),"sweep_time":m5.index[si].isoformat(),"shift_time":m5.index[mi].isoformat(),"mss_level":mss}
+    return None
 
-    # Align the 1h swing trend with the intended trade. Countertrend internal moves are rejected.
-    sells_allowed = swing == "bearish" and internal == "bearish"
-    buys_allowed = swing == "bullish" and internal == "bullish"
-    if not (sells_allowed or buys_allowed):
-        return _wait(symbol, "1h swing and 1h internal structure do not align")
 
-    direction = "sell" if sells_allowed else "buy"
-    matching = [z for z in valid if z["side"] == ("supply" if direction == "sell" else "demand")]
-    if not matching:
-        return _wait(symbol, f"No valid 15m {direction} zone in premium/discount")
-    zone = matching[-1]
-    recent = m5.iloc[-(SWEEP_LOOKBACK+1):-1]
-    last = m5.iloc[-1]
-    prev = m5.iloc[-2]
-    recent_high, recent_low = float(recent.high.max()), float(recent.low.min())
-    highs5, lows5 = _pivots(m5.iloc[:-1])
-    if not highs5 or not lows5:
-        return _wait(symbol, "No confirmed 5m internal swing to validate liquidity sweep and market shift")
-
-    # Require the sweep, a later candle-close MSS, then a pullback into the new 5m origin zone.
-    scan_start = max(10, len(m5) - 18)
-    setup = None
-    for sweep_i in range(scan_start, len(m5)-2):
-        sweep = m5.iloc[sweep_i]
-        after = m5.iloc[sweep_i+1:]
-        if direction == "sell":
-            prior_high = float(m5.high.iloc[max(0, sweep_i-SWEEP_LOOKBACK):sweep_i].max())
-            if float(sweep.high) <= prior_high or float(sweep.close) >= prior_high:
-                continue
-            internal_lows = [(idx, val) for idx, val in lows5 if idx < sweep_i]
-            if not internal_lows:
-                continue
-            target_low = internal_lows[-1][1]
-            shifts = [k for k in range(sweep_i+1, len(m5)) if float(m5.close.iloc[k]) < target_low]
-            if not shifts:
-                continue
-            shift_i = shifts[0]
-            origins = [j for j in range(max(sweep_i, shift_i-5), shift_i) if m5.close.iloc[j] > m5.open.iloc[j]]
-            if not origins:
-                continue
-            origin = origins[-1]
-            zlow, zhigh = float(m5.open.iloc[origin]), float(m5.high.iloc[origin])
-            pullback = m5.iloc[shift_i+1:]
-            touched = any(float(r.high) >= zlow and float(r.low) <= zhigh for _, r in pullback.iterrows())
-            if touched and float(last.close) <= zhigh and float(last.high) >= zlow:
-                setup = {"sweep":sweep_i,"shift":shift_i,"zone_low":zlow,"zone_high":zhigh,
-                         "sweep_extreme":float(sweep.high)}
-                break
-        else:
-            prior_low = float(m5.low.iloc[max(0, sweep_i-SWEEP_LOOKBACK):sweep_i].min())
-            if float(sweep.low) >= prior_low or float(sweep.close) <= prior_low:
-                continue
-            internal_highs = [(idx, val) for idx, val in highs5 if idx < sweep_i]
-            if not internal_highs:
-                continue
-            target_high = internal_highs[-1][1]
-            shifts = [k for k in range(sweep_i+1, len(m5)) if float(m5.close.iloc[k]) > target_high]
-            if not shifts:
-                continue
-            shift_i = shifts[0]
-            origins = [j for j in range(max(sweep_i, shift_i-5), shift_i) if m5.close.iloc[j] < m5.open.iloc[j]]
-            if not origins:
-                continue
-            origin = origins[-1]
-            zlow, zhigh = float(m5.low.iloc[origin]), float(m5.open.iloc[origin])
-            pullback = m5.iloc[shift_i+1:]
-            touched = any(float(r.low) <= zhigh and float(r.high) >= zlow for _, r in pullback.iterrows())
-            if touched and float(last.high) >= zlow and float(last.low) <= zhigh:
-                setup = {"sweep":sweep_i,"shift":shift_i,"zone_low":zlow,"zone_high":zhigh,
-                         "sweep_extreme":float(sweep.low)}
-                break
-
-    if setup is None:
-        return _wait(symbol, "Missing required 5m liquidity sweep → candle-close market shift → pullback sequence")
-    if direction == "sell" and float(last.close) > zone["high"]:
-        return _wait(symbol, "Price broke above the 15m supply zone; setup invalidated")
-    if direction == "buy" and float(last.close) < zone["low"]:
-        return _wait(symbol, "Price broke below the 15m demand zone; setup invalidated")
-
-    entry = (setup["zone_low"] + setup["zone_high"]) / 2.0
-    stop = max(setup["sweep_extreme"], setup["zone_high"]) if direction == "sell" else min(setup["sweep_extreme"], setup["zone_low"])
-    risk = abs(stop - entry)
-    if risk <= 0:
-        return _wait(symbol, "Invalid stop distance")
-    target = entry - MIN_RR*risk if direction == "sell" else entry + MIN_RR*risk
-    # Do not claim a valid 2R if the next opposing 5m swing blocks the path.
-    opposing = [v for _, v in (highs5 if direction == "buy" else lows5) if
-                (v > entry if direction == "buy" else v < entry)]
-    if opposing:
-        next_zone = min(opposing) if direction == "buy" else max(opposing)
-        available = abs(next_zone-entry)
-        if available < MIN_RR*risk:
-            return _wait(symbol, "Next opposing 5m liquidity is too close; less than 1:2 reward-to-risk")
-        target = next_zone
-
-    # Estimate a review horizon from target distance versus recent 5m true range.
-    # This is a planning estimate, not a prediction or guaranteed time to target.
-    prev_close = m5["close"].shift(1)
-    true_range = pd.concat([
-        m5["high"] - m5["low"],
-        (m5["high"] - prev_close).abs(),
-        (m5["low"] - prev_close).abs()
-    ], axis=1).max(axis=1)
-    atr5 = float(true_range.rolling(14).mean().iloc[-1])
-    if pd.isna(atr5) or atr5 <= 0:
-        return _wait(symbol, "Unable to estimate a holding window from recent volatility")
-    estimated_minutes = abs(target - entry) / atr5 * 5.0
-    hold_hours = 5 if estimated_minutes <= 300 else (12 if estimated_minutes <= 720 else 24)
-
-    action = "BUY" if direction == "buy" else "SELL"
-    return {
-        "symbol":symbol, "action":action, "price":entry, "entry_zone_low":setup["zone_low"],
-        "entry_zone_high":setup["zone_high"], "stop_loss":stop,
-        "take_profit_1":entry + (1 if direction=="buy" else -1)*risk,
-        "take_profit_2":target, "risk_distance":risk, "risk_reward":round(abs(target-entry)/risk,2),
-        "swing_trend_1h":swing, "internal_trend_1h":internal,
-        "zone_15m":zone, "liquidity_sweep":"confirmed", "market_shift":"5m candle close confirmed",
-        "hold_hours":hold_hours, "hold_window_estimated_minutes":round(estimated_minutes),
-        "hold_window":"Estimated review window; exit earlier at stop, target, or invalidation",
-        "candle_time":str(m5.index[-1]), "valid_until":"next 5-minute candle close",
-        "reason":"1h swing and 1h internal structure aligned; fresh 15m zone in premium/discount; 5m liquidity sweep, close-confirmed MSS and pullback entry; minimum 1:2 R:R."
-    }
+def evaluate(symbol,raw_5m,now):
+    m5,m15,h1=(_resample(raw_5m,n,now) for n in (5,15,60))
+    if len(m5)<100 or len(m15)<40 or len(h1)<40: return _wait(symbol,"Insufficient closed candles")
+    swing,hh,hl=_structure(h1,3,3); internal,_,_=_structure(h1,1,1)
+    if swing=="unclear" or internal=="unclear": return _wait(symbol,"1h swing or internal structure unclear")
+    # Internal direction is tradable; swing remains the higher-timeframe context.
+    direction="buy" if internal=="bullish" else "sell"
+    if len(hh)<2 or len(hl)<2: return _wait(symbol,"Insufficient confirmed 1h swing points")
+    midpoint=(hh[-1][1]+hl[-1][1])/2
+    side="demand" if direction=="buy" else "supply"
+    candidates=[]
+    for z in _bos_zones(m15):
+        if z["side"]!=side or _invalid(m15,z): continue
+        if direction=="buy" and z["high"]>=midpoint: continue
+        if direction=="sell" and z["low"]<=midpoint: continue
+        candidates.append(z)
+    if not candidates: return _wait(symbol,f"No fresh 15m {side} zone with displacement, confirmed BOS and correct midpoint location")
+    z15=candidates[-1]
+    setup=_entry_sequence(m5,direction,z15)
+    if not setup: return _wait(symbol,"Missing ordered sequence: 15m zone touch → 5m liquidity sweep → candle-close MSS → pullback")
+    last=m5.iloc[-1]
+    if direction=="sell" and last.close>z15["high"]: return _wait(symbol,"15m supply invalidated by candle close")
+    if direction=="buy" and last.close<z15["low"]: return _wait(symbol,"15m demand invalidated by candle close")
+    entry=(setup["zone_low"]+setup["zone_high"])/2
+    stop=max(setup["sweep_extreme"],setup["zone_high"]) if direction=="sell" else min(setup["sweep_extreme"],setup["zone_low"])
+    risk=abs(stop-entry)
+    if risk<=0: return _wait(symbol,"Invalid stop distance")
+    two_r=entry-2*risk if direction=="sell" else entry+2*risk
+    # Use the nearest real opposing 5m BOS zone, not a raw pivot; otherwise target 2R.
+    opp="demand" if direction=="sell" else "supply"; candidates5=[]
+    for z in _bos_zones(m5,lookback=180):
+        if z["side"]!=opp or _invalid(m5,z): continue
+        level=z["high"] if direction=="buy" else z["low"]
+        if (direction=="buy" and level>entry) or (direction=="sell" and level<entry):
+            candidates5.append((abs(level-entry),level))
+    candidates5.sort()
+    if candidates5:
+        target=candidates5[0][1]
+        if abs(target-entry)<2*risk: return _wait(symbol,"Nearest opposing 5m zone is closer than 2R; skip")
+        target_type="next opposing 5m zone"
+    else: target=two_r; target_type="2R"
+    atr=float(_atr(m5).iloc[-1])
+    if pd.isna(atr) or atr<=0: return _wait(symbol,"Cannot estimate review window")
+    minutes=abs(target-entry)/atr*5
+    hold=5 if minutes<=300 else 12 if minutes<=720 else 24
+    action="BUY" if direction=="buy" else "SELL"
+    return {"symbol":symbol,"action":action,"price":entry,"entry_zone_low":setup["zone_low"],"entry_zone_high":setup["zone_high"],"stop_loss":stop,"take_profit_1":entry+(risk if direction=="buy" else -risk),"take_profit_2":target,"target_type":target_type,"risk_distance":risk,"risk_reward":round(abs(target-entry)/risk,2),"swing_trend_1h":swing,"internal_trend_1h":internal,"trend_aligned":swing==internal,"zone_15m":z15,"liquidity_sweep":"confirmed","market_shift":"5m candle close confirmed","setup_details":setup,"hold_hours":hold,"hold_window_estimated_minutes":round(minutes),"hold_window":"Estimated review window only; not guaranteed","candle_time":m5.index[-1].isoformat(),"valid_until":"next 5-minute candle close","reason":f"1h swing {swing}; 1h internal {internal}; 15m {side} BOS zone in correct half; 5m zone touch, sweep, close-confirmed MSS, pullback; {target_type}; RR >= 1:2"}
