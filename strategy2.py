@@ -67,8 +67,9 @@ def _zones(m15, direction):
             base = [j for j in range(max(0, i-5), i) if abs(m15.close.iloc[j]-m15.open.iloc[j]) <= 0.65*float(a)]
             if not base:
                 continue
-            j = base[-min(3, len(base))] if len(base) >= 2 else base[-1]
-            lo, hi = float(m15.low.iloc[j]), float(m15.high.iloc[j])
+            base_group = base[-3:]
+            lo = float(m15.low.iloc[base_group].min())
+            hi = float(m15.high.iloc[base_group].max())
             found.append({"low": lo, "high": hi, "time": m15.index[i].isoformat(), "created": i})
         else:
             prior = next((p for p in reversed(lows) if p[0] + 2 < i and p[0] >= i-24), None)
@@ -77,15 +78,18 @@ def _zones(m15, direction):
             base = [j for j in range(max(0, i-5), i) if abs(m15.close.iloc[j]-m15.open.iloc[j]) <= 0.65*float(a)]
             if not base:
                 continue
-            j = base[-min(3, len(base))] if len(base) >= 2 else base[-1]
-            lo, hi = float(m15.low.iloc[j]), float(m15.high.iloc[j])
+            base_group = base[-3:]
+            lo = float(m15.low.iloc[base_group].min())
+            hi = float(m15.high.iloc[base_group].max())
             found.append({"low": lo, "high": hi, "time": m15.index[i].isoformat(), "created": i})
     return found
 
 
 def _find_mss(df, direction, zone, now):
     """Require a completed candle close through the last opposing pivot after zone touch."""
-    touch = [i for i in range(len(df)) if df.low.iloc[i] <= zone["high"] and df.high.iloc[i] >= zone["low"]]
+    zone_ready = pd.Timestamp(zone["time"]) + pd.Timedelta(minutes=15)
+    touch = [i for i, t in enumerate(df.index)
+             if t >= zone_ready and df.low.iloc[i] <= zone["high"] and df.high.iloc[i] >= zone["low"]]
     if not touch:
         return None
     first = touch[-1]
