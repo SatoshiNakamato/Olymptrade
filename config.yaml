@@ -1,0 +1,14 @@
+symbols:
+  - EUR/USD
+  - XAU/USD
+intervals:
+  entry: 5min
+  confirmation: 15min
+outputsize: 120
+rsi_period: 14
+ema_fast: 20
+ema_slow: 50
+atr_period: 14
+min_atr_percent: 0.015
+min_signal_score: 5
+cooldown_minutes: 45
