@@ -1,40 +1,47 @@
 # EUR/USD + Gold Smart-Money-Concept Email Alerts
 
-Alert-only market analysis for EUR/USD and XAU/USD. The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
+Alert-only market analysis for EUR/USD and XAU/USD (with the existing optional BTC/USD scanner). The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
 
-## Strategy rules
+## Strategy 1 — 1h structure + 15m BOS zone + 5m sweep/MSS
 
-The scanner evaluates completed candles only and requires every gate below:
+The original scanner evaluates completed candles and requires aligned 1-hour swing/internal structure, a fresh 15-minute demand/supply zone in the correct half of the range, a 5-minute liquidity sweep, candle-close market-structure shift, and pullback. It requires at least 1:2 risk/reward or waits.
 
-1. **1-hour swing structure:** higher highs/higher lows for buys or lower highs/lower lows for sells. Unclear structure means WAIT.
-2. **1-hour internal structure:** smaller 1-hour pivots are tracked separately from the larger 1-hour swing pivots. The strongest setups require both structures to align; if they conflict or are unclear, the bot waits. The 5-minute chart is reserved for the liquidity sweep, market shift and entry sequence.
-3. **15-minute zone:** a fresh demand zone must be below the 1-hour dealing-range midpoint (discount) for buys; a fresh supply zone must be above it (premium). Zones are identified from displacement candles that close beyond recent structure.
-4. **5-minute liquidity sweep:** price must wick beyond a recent high/low and close back inside, while interacting with the selected 15-minute zone.
-5. **Market structure shift:** a completed 5-minute candle must close beyond the prior internal swing level. A wick alone is not confirmation.
-6. **Pullback:** price must return to the new 5-minute origin zone after the shift.
-7. **Invalidation and reward:** a close through the 15-minute zone invalidates the setup. The target must offer at least 1:2 risk-to-reward relative to the stop.
+## Strategy 2 — 15m trend + zone + lower-timeframe MSS
 
-If any condition is missing, the result is WAIT and no entry email is sent.
+The second scanner looks for 15-minute trend alignment, a return to a displacement-origin zone, and a completed lower-timeframe market-structure shift. It calculates a swing-based stop and 2R target. It can use 1-minute confirmation when the 5-minute confirmation is too far from the zone.
+
+## Strategy 3 — EUR/USD 1h/15m trend pullback continuation
+
+The third scanner is dedicated to EUR/USD:
+
+1. 1-hour EMA20/EMA50 and price must agree on direction.
+2. 15-minute EMA20/EMA50 and price must agree with the 1-hour trend.
+3. Price must have recently pulled back to the 15-minute EMA20 reference on the 5-minute chart.
+4. A completed 5-minute candle must reject the pullback and close beyond the previous 5-minute candle's high (BUY) or low (SELL).
+5. 5-minute RSI must be inside a direction-specific confirmation band to avoid chasing an extended move.
+6. Stop is derived from the recent 5-minute swing and ATR; TP1 is 1R and TP2 is 2R.
+7. The alert expires at the next 5-minute candle close. Recheck the live quote and do not enter on an expired alert.
+
+The strategy is two-sided: it can send BUY or SELL only when all filters align. The bearish setup is the inverse of the bullish setup. It does not reuse fixed price levels from an earlier market snapshot.
 
 ## Session and news filters
 
-- Alerts are permitted only during 08:00–17:00 Europe/London time, Monday to Friday.
-- XAU/USD is blocked from 15 minutes before to 15 minutes after high-impact USD calendar events.
-- The calendar filter fails closed: if the calendar cannot be retrieved or parsed, XAU/USD alerts are skipped.
+- All FX/gold entries are permitted only during 08:00–17:00 Europe/London time, Monday to Friday.
+- XAU/USD and Strategy 3 EUR/USD are blocked from 15 minutes before to 15 minutes after high-impact USD calendar events.
+- The calendar filter fails closed: if the calendar cannot be retrieved or parsed, the relevant entry alerts are skipped.
 - The calendar feed is a third-party source; verify major event times against a trusted economic calendar.
 
-## Risk rules
+## Risk rules and limitations
 
-The email reminds you to risk 0.5–1% of account equity per trade, calculate position size from the actual stop distance, and stop for the day after a 2% loss, 5% profit, or 3 trades.
+Emails are alerts, not trade instructions or guarantees. The bot does not place, monitor, or close broker orders. It cannot see your account balance, fills, spread, open positions, or realized P/L. Risk sizing and daily loss limits must be enforced manually. Use a demo account for forward testing and verify each quote, spread, entry window, stop, and target.
 
-These daily limits are **not enforced by this alert-only bot**. It cannot see your broker balance, open positions, fills, trade count, or realized daily P/L. You must enforce them yourself. Do not risk money you cannot afford to lose.
+Holding/review windows are estimates based on ATR and target distance, not guaranteed durations. GitHub Actions runs every 5 minutes on a best-effort schedule; it is not real-time and can miss intrabar setups. No strategy promises a fixed number of signals per day; strict filters may correctly produce no alert on some days.
 
 ## Automation and data
 
-- GitHub Actions checks every 5 minutes (best-effort; not guaranteed real-time).
-- Twelve Data supplies 5-minute candles; the bot aggregates them into closed 15-minute and 1-hour candles locally.
-- Each scan makes one market-data request per symbol, plus a calendar request for XAU/USD when inside the London session.
-- Confirm your Twelve Data plan supports EUR/USD and XAU/USD and sufficient historical 5-minute data.
+- GitHub Actions checks every 5 minutes (best-effort).
+- Twelve Data supplies 5-minute candles; the scanners aggregate completed 15-minute and 1-hour candles locally.
+- Confirm your Twelve Data plan supports EUR/USD, XAU/USD and sufficient historical 5-minute data.
 
 ## Required GitHub Actions secrets
 
@@ -52,8 +59,4 @@ Recipient: Ineed2pnaga@gmail.com. Never commit credentials or paste them into ch
 2. Open Actions → Market signal email alerts → Run workflow.
 3. Inspect the workflow logs for API, calendar, and Python errors.
 4. Confirm email delivery before relying on scheduled alerts.
-5. Forward-test on a demo account. Check every zone, entry, spread, and stop against your broker chart.
-
-## Important limitations
-
-This is a rule-based approximation of discretionary market-structure analysis. Swing pivots, displacement, order-block zones, and internal structure are defined mechanically; different traders may mark them differently. Historical signals do not establish profitability. The scanner can miss setups between scheduled runs, and a BUY NOW / SELL NOW email is not a guarantee or an instruction to enter after the validity window expires. The bot does not execute, monitor, or close trades.
+5. Forward-test every strategy on a demo account before considering live use.
