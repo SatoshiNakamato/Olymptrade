@@ -71,13 +71,14 @@ jobs:
           ALERT_TO: Ineed2pnaga@gmail.com
           SYMBOLS: EUR/USD,XAU/USD,BTC/USD
         run: python strategy2.py
-      - name: Scan EUR/USD with Strategy 3 and email confirmed signals
+      - name: Scan four markets with Strategy 3 and email confirmed signals
         if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
+          SYMBOLS: EUR/USD,XAU/USD,XAG/USD,BTC/USD
         run: python strategy3.py
       - name: Save Strategy 3 alert state
         if: always()
