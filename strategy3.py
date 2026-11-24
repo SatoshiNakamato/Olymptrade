@@ -13,6 +13,7 @@ from market_data import fetch_candles
 from market_filters import london_session_status, usd_high_impact_news_status
 from plan_monitor import monitor_plan
 from email_alerts import send_tp1_alert, send_exit_alert
+from alert_dedupe import is_duplicate, record_sent
 
 STATE_PATH = ".strategy3_state.json"
 DEFAULT_SYMBOLS = ["EUR/USD", "XAU/USD", "XAG/USD", "BTC/USD"]
@@ -237,12 +238,16 @@ def main():
         cooldown_ok = (not last_sent or
                        now - datetime.fromisoformat(last_sent) >= timedelta(minutes=20)
                        or old.get("action") != signal["action"])
+        if is_duplicate(symbol, signal["action"], now):
+            print(f"Strategy 3 cross-strategy duplicate suppressed: {symbol}")
+            continue
         if old.get("key") == key or not cooldown_ok:
             print(f"Strategy 3 duplicate/cooldown suppressed: {symbol}")
             continue
 
         try:
             _send_email(signal)
+            record_sent(symbol, signal["action"], now)
             active = {"symbol": symbol, "action": signal["action"], "price": signal["entry"],
                       "stop_loss": signal["stop_loss"], "take_profit_1": signal["take_profit_1"],
                       "take_profit_2": signal["take_profit_2"], "candle_time": signal["candle_time"],
