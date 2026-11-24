@@ -76,10 +76,12 @@ def send_tp1_alert(symbol, action, price, plan, event_time):
         f"Stop-loss reference: {_price(plan['stop_loss'], symbol)}\\n"
         f"TP2 reference: {_price(plan['take_profit_2'], symbol)}\\n"
         f"Completed 5m candle (UTC): {event_time}\\n\\n"
-        "Price-level notification only. The bot cannot verify whether you entered, "
-        "cannot calculate your filled quantity, and cannot take partial profit or close orders. "
-        "If you have a live position, check your broker quote and decide manually. "
-        "If you did not enter, ignore this notification."
+        "RECOMMENDATION: If you entered and the live broker quote confirms TP1, consider "
+        "securing a partial profit manually. For any remaining position, review whether moving "
+        "the stop toward breakeven is appropriate for your execution costs and market conditions. "
+        "Do not assume TP1 guarantees TP2. "
+        "The bot cannot verify your entry, filled quantity, or realized profit and cannot change "
+        "stops, take partial profit, or close orders. If you did not enter, ignore this alert."
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
