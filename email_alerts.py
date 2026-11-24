@@ -62,6 +62,30 @@ def send_alert(signal, test_mode=False):
 
 
 
+def send_tp1_alert(symbol, action, price, plan, event_time):
+    sender = os.environ["GMAIL_SENDER"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
+    recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
+    msg = EmailMessage()
+    msg["Subject"] = f"TP1 REACHED: {symbol} | {action} plan"
+    msg["From"], msg["To"] = sender, recipient
+    msg.set_content(
+        f"TP1 (1R) PRICE ALERT — {symbol}\\n"
+        f"Plan direction: {action}\\n"
+        f"TP1 level touched: {_price(price, symbol)}\\n"
+        f"Stop-loss reference: {_price(plan['stop_loss'], symbol)}\\n"
+        f"TP2 reference: {_price(plan['take_profit_2'], symbol)}\\n"
+        f"Completed 5m candle (UTC): {event_time}\\n\\n"
+        "Price-level notification only. The bot cannot verify whether you entered, "
+        "cannot calculate your filled quantity, and cannot take partial profit or close orders. "
+        "If you have a live position, check your broker quote and decide manually. "
+        "If you did not enter, ignore this notification."
+    )
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
+        smtp.login(sender, password)
+        smtp.send_message(msg)
+
+
 def send_exit_alert(symbol, action, reason, price, plan):
     sender = os.environ["GMAIL_SENDER"]
     password = os.environ["GMAIL_APP_PASSWORD"]
