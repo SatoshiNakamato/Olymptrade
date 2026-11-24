@@ -92,10 +92,12 @@ def main():
     if os.getenv("SEND_TEST_EMAIL_ON_START", "").strip().lower() in {"1", "true", "yes"}:
         log("Manual email test requested.")
         test_code = run_strategy("send_test_email.py", "")
-        if test_code == 0:
-            log("MANUAL EMAIL TEST: successful.")
-        else:
-            log(f"MANUAL EMAIL TEST: failed with exit code {test_code}.")
+        log(f"MANUAL EMAIL TEST: {'successful' if test_code == 0 else f'failed with exit code {test_code}'}.")
+
+    if os.getenv("SEND_TEST_ALERT_ON_START", "").strip().lower() in {"1", "true", "yes"}:
+        log("Manual BUY-alert pipeline test requested. No trade will be placed.")
+        test_code = run_strategy("send_test_alert.py", "")
+        log(f"BUY-ALERT PIPELINE TEST: {'successful' if test_code == 0 else f'failed with exit code {test_code}'}.")
 
     next_run = time.monotonic()
     while not STOP:

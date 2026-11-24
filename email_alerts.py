@@ -7,7 +7,7 @@ def _price(value, symbol):
     return f"{value:.5f}" if symbol == "EUR/USD" else f"{value:.2f}"
 
 
-def send_alert(signal):
+def send_alert(signal, test_mode=False):
     sender = os.environ["GMAIL_SENDER"]
     password = os.environ["GMAIL_APP_PASSWORD"]
     recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
@@ -46,6 +46,16 @@ def send_alert(signal):
         'Do not enter if the quote has moved outside the entry zone, the signal expired, the spread is abnormal, '
         'or a major USD news blackout is active. No setup is guaranteed. The bot does not place or manage orders.'
     )
+
+    if test_mode:
+        msg.replace_header("Subject", f"TEST ONLY — alert pipeline check | {symbol}")
+        msg.set_content(
+            "TEST ONLY — NO TRADE.\n\n"
+            "This message verifies the actual send_alert() email delivery function.\n"
+            "The signal data is artificial. It is not a market recommendation.\n"
+            "No broker order was placed.\n"
+        )
+
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
         smtp.send_message(msg)
