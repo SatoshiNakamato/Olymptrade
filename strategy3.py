@@ -11,6 +11,8 @@ import pandas as pd
 
 from market_data import fetch_candles
 from market_filters import london_session_status, usd_high_impact_news_status
+from plan_monitor import monitor_plan
+from email_alerts import send_tp1_alert, send_exit_alert
 
 STATE_PATH = ".strategy3_state.json"
 DEFAULT_SYMBOLS = ["EUR/USD", "XAU/USD", "XAG/USD", "BTC/USD"]
@@ -204,6 +206,25 @@ def main():
 
         try:
             raw5 = fetch_candles(symbol, interval="5min")
+            old = state.get(symbol, {})
+            active = old.get("active_plan")
+            if active:
+                events = monitor_plan(raw5, active, now)
+                for event in events:
+                    if event["type"] == "tp1":
+                        send_tp1_alert(symbol, active["action"], active["take_profit_1"], active, event["time"])
+                        print("Strategy 3 TP1 price alert sent: " + symbol)
+                    else:
+                        send_exit_alert(symbol, active["action"], event["reason"], event["price"], active)
+                        old.pop("active_plan", None)
+                        old["last_exit_at"] = event["time"]
+                        print("Strategy 3 exit/review alert sent: " + symbol + ": " + event["reason"])
+                if "active_plan" in old:
+                    old["active_plan"] = active
+                state[symbol] = old
+                with open(STATE_PATH, "w", encoding="utf-8") as f:
+                    json.dump(state, f, indent=2)
+                continue
             signal = evaluate_strategy3(raw5, now, symbol)
         except Exception as exc:
             print(f"Strategy 3 {symbol}: scan error — {exc}")
@@ -225,8 +246,13 @@ def main():
 
         try:
             _send_email(signal)
+            active = {"symbol": symbol, "action": signal["action"], "price": signal["entry"],
+                      "stop_loss": signal["stop_loss"], "take_profit_1": signal["take_profit_1"],
+                      "take_profit_2": signal["take_profit_2"], "candle_time": signal["candle_time"],
+                      "created_at": now.isoformat(), "hold_hours": signal["hold_hours"],
+                      "last_checked_candle": signal["candle_time"]}
             state[symbol] = {"key": key, "sent_at": now.isoformat(),
-                             "action": signal["action"]}
+                             "action": signal["action"], "active_plan": active}
             with open(STATE_PATH, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=2)
             print(f'Strategy 3 email sent: {signal["action"]} {symbol}')
