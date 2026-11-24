@@ -89,6 +89,14 @@ def main():
     log("Markets: EUR/USD, XAU/USD, XAG/USD, BTC/USD.")
     log("Mode: alert-only; no broker orders are placed.")
 
+    if os.getenv("SEND_TEST_EMAIL_ON_START", "").strip().lower() in {"1", "true", "yes"}:
+        log("Manual email test requested.")
+        test_code = run_strategy("send_test_email.py", "")
+        if test_code == 0:
+            log("MANUAL EMAIL TEST: successful.")
+        else:
+            log(f"MANUAL EMAIL TEST: failed with exit code {test_code}.")
+
     next_run = time.monotonic()
     while not STOP:
         cycle_started = time.monotonic()
