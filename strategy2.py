@@ -171,7 +171,7 @@ def evaluate_strategy2(symbol, raw5, raw1, now):
         return {"symbol": symbol, "action": "WAIT", "reason": "Confirmation candle unavailable for entry-zone calculation"}
     confirm_bar = confirm_frame.loc[confirm_time]
     entry_low, entry_high = float(confirm_bar.low), float(confirm_bar.high)
-    valid_until = (m5.index[-1] + pd.Timedelta(minutes=5)).isoformat()
+    valid_until = (m5.index[-1] + pd.Timedelta(minutes=10)).isoformat()
     return {
         "strategy": "Strategy 2 — 15m trend, zone and lower-timeframe MSS",
         "symbol": symbol, "action": "BUY" if side == "buy" else "SELL",
