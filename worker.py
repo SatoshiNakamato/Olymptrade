@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-INTERVAL_SECONDS = max(20, int(os.getenv("SCAN_INTERVAL_SECONDS", "20")) )
+INTERVAL_SECONDS = 20
 STOP = False
 
 STRATEGIES = (
