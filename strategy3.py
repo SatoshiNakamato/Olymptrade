@@ -1,6 +1,7 @@
-"""Strategy 3: EUR/USD trend pullback with candle-close confirmation.
+"""Strategy 3: multi-market trend pullback continuation alerts.
 
-This is an alert-only ruleset. It never places broker orders.
+Scans EUR/USD, XAU/USD (gold), XAG/USD (silver), and BTC/USD.
+Alert-only: never places broker orders.
 """
 import json
 import os
@@ -12,7 +13,7 @@ from market_data import fetch_candles
 from market_filters import london_session_status, usd_high_impact_news_status
 
 STATE_PATH = ".strategy3_state.json"
-SYMBOL = "EUR/USD"
+DEFAULT_SYMBOLS = ["EUR/USD", "XAU/USD", "XAG/USD", "BTC/USD"]
 
 
 def _closed(raw, minutes, now):
@@ -30,18 +31,25 @@ def _ema(series, period):
 def _atr(df, period=14):
     prev = df.close.shift(1)
     tr = pd.concat(
-        [df.high - df.low, (df.high - prev).abs(), (df.low - prev).abs()],
-        axis=1,
+        [df.high - df.low, (df.high - prev).abs(), (df.low - prev).abs()], axis=1
     ).max(axis=1)
     return tr.rolling(period).mean()
 
 
-def evaluate_strategy3(raw5, now):
+def _rsi(close, period=14):
+    delta = close.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1 / period, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / period, adjust=False).mean()
+    rs = gain / loss.replace(0, float("nan"))
+    return 100 - 100 / (1 + rs)
+
+
+def evaluate_strategy3(raw5, now, symbol):
     m5 = _closed(raw5, 5, now)
     m15 = _closed(raw5, 15, now)
     h1 = _closed(raw5, 60, now)
-    if len(m5) < 80 or len(m15) < 60 or len(h1) < 60:
-        return {"symbol": SYMBOL, "action": "WAIT",
+    if len(m5) < 80 or len(m15) < 50 or len(h1) < 50:
+        return {"symbol": symbol, "action": "WAIT",
                 "reason": "Insufficient completed 5m/15m/1h candles"}
 
     h1_fast, h1_slow = _ema(h1.close, 20), _ema(h1.close, 50)
@@ -56,73 +64,59 @@ def evaluate_strategy3(raw5, now):
     elif h1_up and m15_up:
         side = "BUY"
     else:
-        return {"symbol": SYMBOL, "action": "WAIT",
-                "reason": "1h and 15m EMA20/EMA50 trend filters are not aligned"}
+        return {"symbol": symbol, "action": "WAIT",
+                "reason": "1h and 15m EMA20/EMA50 trends are not aligned"}
 
-    # Avoid chasing an extended move. Require a recent 5m pullback to the
-    # current 15m EMA20, followed by a completed 5m continuation candle.
     ema20_5 = _ema(m5.close, 20)
     atr = _atr(m5)
     last, prev = m5.iloc[-1], m5.iloc[-2]
     atr_now = float(atr.iloc[-1])
     if pd.isna(atr_now) or atr_now <= 0:
-        return {"symbol": SYMBOL, "action": "WAIT", "reason": "ATR unavailable"}
+        return {"symbol": symbol, "action": "WAIT", "reason": "ATR unavailable"}
 
     ema15 = float(m15_fast.iloc[-1])
     recent = m5.iloc[-4:-1]
     touched = bool(((recent.low <= ema15) & (recent.high >= ema15)).any())
     if not touched:
-        return {"symbol": SYMBOL, "action": "WAIT",
-                "reason": "No recent 5m pullback to the 15m EMA20 reference"}
+        return {"symbol": symbol, "action": "WAIT",
+                "reason": "No recent 5m pullback to 15m EMA20"}
 
-    # Candle-close confirmation must break the previous completed candle.
+    rsi = float(_rsi(m5.close).iloc[-1])
     if side == "SELL":
         confirmed = (last.close < last.open and last.close < prev.low
                      and last.close < ema20_5.iloc[-1])
-        rsi_delta = m5.close.diff()
-        gain = rsi_delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
-        loss = (-rsi_delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
-        rs = gain / loss.replace(0, float("nan"))
-        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
         if not confirmed:
-            return {"symbol": SYMBOL, "action": "WAIT",
-                    "reason": "Waiting for a bearish 5m candle close below the prior candle low"}
+            return {"symbol": symbol, "action": "WAIT",
+                    "reason": "Waiting for bearish 5m close below previous candle low"}
         if not 32 <= rsi <= 58:
-            return {"symbol": SYMBOL, "action": "WAIT",
-                    "reason": f"5m RSI {rsi:.1f} is outside the sell confirmation band (32–58)"}
+            return {"symbol": symbol, "action": "WAIT",
+                    "reason": f"5m RSI {rsi:.1f} outside sell band (32–58)"}
         entry = float(last.close)
-        swing = float(m5.high.iloc[-7:].max())
-        stop = max(swing, entry + 1.2 * atr_now)
+        stop = max(float(m5.high.iloc[-7:].max()), entry + 1.2 * atr_now)
         risk = stop - entry
         target1, target2 = entry - risk, entry - 2 * risk
     else:
         confirmed = (last.close > last.open and last.close > prev.high
                      and last.close > ema20_5.iloc[-1])
-        rsi_delta = m5.close.diff()
-        gain = rsi_delta.clip(lower=0).ewm(alpha=1/14, adjust=False).mean()
-        loss = (-rsi_delta.clip(upper=0)).ewm(alpha=1/14, adjust=False).mean()
-        rs = gain / loss.replace(0, float("nan"))
-        rsi = float((100 - 100 / (1 + rs)).iloc[-1])
         if not confirmed:
-            return {"symbol": SYMBOL, "action": "WAIT",
-                    "reason": "Waiting for a bullish 5m candle close above the prior candle high"}
+            return {"symbol": symbol, "action": "WAIT",
+                    "reason": "Waiting for bullish 5m close above previous candle high"}
         if not 42 <= rsi <= 68:
-            return {"symbol": SYMBOL, "action": "WAIT",
-                    "reason": f"5m RSI {rsi:.1f} is outside the buy confirmation band (42–68)"}
+            return {"symbol": symbol, "action": "WAIT",
+                    "reason": f"5m RSI {rsi:.1f} outside buy band (42–68)"}
         entry = float(last.close)
-        swing = float(m5.low.iloc[-7:].min())
-        stop = min(swing, entry - 1.2 * atr_now)
+        stop = min(float(m5.low.iloc[-7:].min()), entry - 1.2 * atr_now)
         risk = entry - stop
         target1, target2 = entry + risk, entry + 2 * risk
 
     if risk <= 0:
-        return {"symbol": SYMBOL, "action": "WAIT", "reason": "Invalid stop distance"}
+        return {"symbol": symbol, "action": "WAIT", "reason": "Invalid stop distance"}
 
     review_minutes = abs(target2 - entry) / atr_now * 5
     hold_hours = 5 if review_minutes <= 300 else 12 if review_minutes <= 720 else 24
     return {
-        "strategy": "Strategy 3 — EUR/USD 1h/15m trend pullback continuation",
-        "symbol": SYMBOL, "action": side, "entry": entry,
+        "strategy": "Strategy 3 — multi-market 1h/15m trend pullback",
+        "symbol": symbol, "action": side, "entry": entry,
         "entry_zone_low": min(float(last.low), entry),
         "entry_zone_high": max(float(last.high), entry),
         "stop_loss": stop, "take_profit_1": target1, "take_profit_2": target2,
@@ -134,12 +128,15 @@ def evaluate_strategy3(raw5, now):
         "estimated_review_minutes": round(review_minutes),
         "candle_time": m5.index[-1].isoformat(),
         "valid_until": (m5.index[-1] + pd.Timedelta(minutes=5)).isoformat(),
-        "reason": (
-            f"1h and 15m trends aligned; recent 5m pullback to 15m EMA20; "
-            f"completed {side.lower()} 5m candle broke the prior candle; "
-            f"RSI {rsi:.1f}; dynamic ATR/swing stop and 2R target"
-        ),
+        "reason": (f"1h/15m trends aligned; recent 5m EMA20 pullback; completed "
+                   f"{side.lower()} candle broke previous candle; RSI {rsi:.1f}; "
+                   "ATR/swing stop and 2R target"),
     }
+
+
+def _fmt(symbol, value):
+    digits = 5 if symbol == "EUR/USD" else 2 if symbol == "BTC/USD" else 3
+    return f"{float(value):.{digits}f}"
 
 
 def _send_email(signal):
@@ -149,13 +146,14 @@ def _send_email(signal):
     sender = os.environ["GMAIL_SENDER"]
     password = os.environ["GMAIL_APP_PASSWORD"]
     recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
-    fmt = lambda x: f"{float(x):.5f}"
+    symbol = signal["symbol"]
+    fmt = lambda x: _fmt(symbol, x)
     msg = EmailMessage()
-    msg["Subject"] = f'{signal["action"]}: EUR/USD | Strategy 3 pullback confirmed'
+    msg["Subject"] = f'{signal["action"]}: {symbol} | Strategy 3 confirmed'
     msg["From"], msg["To"] = sender, recipient
     msg.set_content(
         f'{signal["strategy"]}\n\n'
-        f'ACTION: {signal["action"]} EUR/USD\n'
+        f'ACTION: {signal["action"]} {symbol}\n'
         f'Entry reference: {fmt(signal["entry"])}\n'
         f'5m entry candle range: {fmt(signal["entry_zone_low"])}–{fmt(signal["entry_zone_high"])}\n'
         f'Stop-loss: {fmt(signal["stop_loss"])}\n'
@@ -165,14 +163,14 @@ def _send_email(signal):
         f'1h trend: {signal["trend_1h"]}; 15m trend: {signal["trend_15m"]}\n'
         f'5m RSI: {signal["rsi_5m"]:.1f}\n'
         f'15m EMA20 pullback reference: {fmt(signal["pullback_reference_15m_ema20"])}\n'
-        f'Estimated review window: {signal["hold_hours"]}h (not a guaranteed holding period)\n'
+        f'Estimated review window: {signal["hold_hours"]}h (not guaranteed)\n'
         f'Confirmed candle (UTC): {signal["candle_time"]}\n'
         f'Entry validity ends (UTC): {signal["valid_until"]}\n\n'
         f'Reason: {signal["reason"]}\n\n'
-        'IMPORTANT: This is a conditional alert, not a guaranteed trade. Verify the live broker quote, '
-        'spread, and entry validity before acting. Do not enter if price has moved outside the candle range '
-        'or the validity time has passed. The bot does not place, monitor, or close broker orders. '
-        'Risk sizing and daily loss limits must be enforced manually.'
+        'This is an alert, not a guaranteed trade. Verify broker quote, spread, '
+        'entry validity, and position size before acting. Do not enter after the '
+        'validity time or outside the stated candle range. The bot never places, '
+        'monitors, or closes orders. Forward-test on demo first.'
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
@@ -181,7 +179,8 @@ def _send_email(signal):
 
 def main():
     now = datetime.now(timezone.utc)
-    in_session, session_reason = london_session_status(now)
+    symbols = [s.strip().upper() for s in os.environ.get(
+        "SYMBOLS", ",".join(DEFAULT_SYMBOLS)).split(",") if s.strip()]
     state = {}
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
@@ -189,35 +188,50 @@ def main():
     except (OSError, json.JSONDecodeError):
         pass
 
-    if not in_session:
-        print(f"Strategy 3 EUR/USD: WAIT — {session_reason}")
-        return
-    news_ok, news_reason = usd_high_impact_news_status(now)
-    if not news_ok:
-        print(f"Strategy 3 EUR/USD: WAIT — {news_reason}")
-        return
+    for symbol in symbols:
+        # FX and precious metals use the London session filter; BTC is 24/7.
+        if symbol != "BTC/USD":
+            in_session, reason = london_session_status(now)
+            if not in_session:
+                print(f"Strategy 3 {symbol}: WAIT — {reason}")
+                continue
 
-    raw5 = fetch_candles(SYMBOL, interval="5min")
-    signal = evaluate_strategy3(raw5, now)
-    print(json.dumps(signal, default=str))
-    if signal["action"] == "WAIT":
-        return
+        # USD macro events can move all four USD-quoted markets.
+        news_ok, news_reason = usd_high_impact_news_status(now)
+        if not news_ok:
+            print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
+            continue
 
-    key = f'{SYMBOL}:{signal["action"]}:{signal["candle_time"]}'
-    old = state.get(SYMBOL, {})
-    last_sent = old.get("sent_at")
-    cooldown_ok = (not last_sent or
-                   now - datetime.fromisoformat(last_sent) >= timedelta(minutes=20)
-                   or old.get("action") != signal["action"])
-    if old.get("key") == key or not cooldown_ok:
-        print("Strategy 3 duplicate/cooldown suppressed: EUR/USD")
-        return
+        try:
+            raw5 = fetch_candles(symbol, interval="5min")
+            signal = evaluate_strategy3(raw5, now, symbol)
+        except Exception as exc:
+            print(f"Strategy 3 {symbol}: scan error — {exc}")
+            continue
 
-    _send_email(signal)
-    state[SYMBOL] = {"key": key, "sent_at": now.isoformat(), "action": signal["action"]}
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
-    print(f'Strategy 3 email sent: {signal["action"]} EUR/USD')
+        print(json.dumps(signal, default=str))
+        if signal["action"] == "WAIT":
+            continue
+
+        key = f'{symbol}:{signal["action"]}:{signal["candle_time"]}'
+        old = state.get(symbol, {})
+        last_sent = old.get("sent_at")
+        cooldown_ok = (not last_sent or
+                       now - datetime.fromisoformat(last_sent) >= timedelta(minutes=20)
+                       or old.get("action") != signal["action"])
+        if old.get("key") == key or not cooldown_ok:
+            print(f"Strategy 3 duplicate/cooldown suppressed: {symbol}")
+            continue
+
+        try:
+            _send_email(signal)
+            state[symbol] = {"key": key, "sent_at": now.isoformat(),
+                             "action": signal["action"]}
+            with open(STATE_PATH, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+            print(f'Strategy 3 email sent: {signal["action"]} {symbol}')
+        except Exception as exc:
+            print(f"Strategy 3 {symbol}: email error — {exc}")
 
 
 if __name__ == "__main__":
