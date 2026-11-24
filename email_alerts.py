@@ -70,12 +70,12 @@ def send_tp1_alert(symbol, action, price, plan, event_time):
     msg["Subject"] = f"TP1 REACHED: {symbol} | {action} plan"
     msg["From"], msg["To"] = sender, recipient
     msg.set_content(
-        f"TP1 (1R) PRICE ALERT — {symbol}\\n"
-        f"Plan direction: {action}\\n"
-        f"TP1 level touched: {_price(price, symbol)}\\n"
-        f"Stop-loss reference: {_price(plan['stop_loss'], symbol)}\\n"
-        f"TP2 reference: {_price(plan['take_profit_2'], symbol)}\\n"
-        f"Completed 5m candle (UTC): {event_time}\\n\\n"
+        f"TP1 (1R) PRICE ALERT — {symbol}\n"
+        f"Plan direction: {action}\n"
+        f"TP1 level touched: {_price(price, symbol)}\n"
+        f"Stop-loss reference: {_price(plan['stop_loss'], symbol)}\n"
+        f"TP2 reference: {_price(plan['take_profit_2'], symbol)}\n"
+        f"Completed 5m candle (UTC): {event_time}\n\n"
         "RECOMMENDATION: If you entered and the live broker quote confirms TP1, consider "
         "securing a partial profit manually. For any remaining position, review whether moving "
         "the stop toward breakeven is appropriate for your execution costs and market conditions. "
