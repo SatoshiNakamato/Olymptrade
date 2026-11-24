@@ -6,6 +6,8 @@ import pandas as pd
 
 from market_data import fetch_candles
 from market_filters import london_session_status, usd_high_impact_news_status
+from plan_monitor import monitor_plan
+from email_alerts import send_tp1_alert, send_exit_alert
 
 STATE_PATH = ".strategy2_state.json"
 SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
@@ -156,17 +158,26 @@ def evaluate_strategy2(symbol, raw5, raw1, now):
     risk = abs(entry-stop)
     if risk <= 0:
         return {"symbol": symbol, "action": "WAIT", "reason": "Invalid swing stop distance"}
+    target1 = entry + risk if side == "buy" else entry - risk
     target = entry + 2*risk if side == "buy" else entry - 2*risk
     atr = float(_atr(m5).iloc[-1])
     if pd.isna(atr) or atr <= 0:
         return {"symbol": symbol, "action": "WAIT", "reason": "Unable to estimate review window"}
     mins = abs(target-entry)/atr*5
     hours = 5 if mins <= 300 else 12 if mins <= 720 else 24
+    confirm_time = pd.Timestamp(confirm["confirmation_time"])
+    confirm_frame = m1 if confirmation_tf == "1m" else m5
+    if confirm_time not in confirm_frame.index:
+        return {"symbol": symbol, "action": "WAIT", "reason": "Confirmation candle unavailable for entry-zone calculation"}
+    confirm_bar = confirm_frame.loc[confirm_time]
+    entry_low, entry_high = float(confirm_bar.low), float(confirm_bar.high)
+    valid_until = (m5.index[-1] + pd.Timedelta(minutes=5)).isoformat()
     return {
         "strategy": "Strategy 2 — 15m trend, zone and lower-timeframe MSS",
         "symbol": symbol, "action": "BUY" if side == "buy" else "SELL",
         "direction_15m": direction, "zone_15m": zone,
-        "entry": entry, "stop_loss": stop, "take_profit": target,
+        "entry": entry, "entry_zone_low": min(entry_low, entry_high), "entry_zone_high": max(entry_low, entry_high),
+        "valid_until": valid_until, "take_profit_1": target1, "stop_loss": stop, "take_profit": target,
         "risk_distance": risk, "risk_reward": 2.0,
         "estimated_profit_inr_proxy": round((75 * 50) * (abs(target-entry) / entry), 2) if entry else 0.0,
         "confirmation_timeframe": confirmation_tf,
@@ -196,8 +207,11 @@ def _send_email(signal):
         f'15m direction: {signal["direction_15m"]}\n'
         f'15m zone: {fmt(signal["zone_15m"]["low"])} - {fmt(signal["zone_15m"]["high"])}\n'
         f'Entry reference (confirmation close): {fmt(signal["entry"])}\n'
+        f'Entry zone: {fmt(signal["entry_zone_low"])} - {fmt(signal["entry_zone_high"])}\n'
+        f'Entry valid until (UTC): {signal["valid_until"]}\n'
         f'Confirmation: {signal["confirmation_timeframe"]} candle closed beyond {fmt(signal["confirmation_level"])}\n'
         f'Stop-loss: {fmt(signal["stop_loss"])}\n'
+        f'TP1 (1R): {fmt(signal["take_profit_1"])}\n'
         f'Take-profit (2R): {fmt(signal["take_profit"])}\n'
         f'Risk/reward: 1:2\n'
         f'Estimated review window: {signal["hold_hours"]} hours (not a guaranteed holding time)\n'
@@ -226,6 +240,23 @@ def main():
     for symbol in SYMBOLS:
         try:
             raw5 = fetch_candles(symbol, interval="5min")
+            old = state.get(symbol, {})
+            active = old.get("active_plan")
+            if active:
+                events = monitor_plan(raw5, active, now)
+                for event in events:
+                    if event["type"] == "tp1":
+                        send_tp1_alert(symbol, active["action"], active["take_profit_1"], active, event["time"])
+                        print("Strategy 2 TP1 price alert sent: " + symbol)
+                    else:
+                        send_exit_alert(symbol, active["action"], event["reason"], event["price"], active)
+                        old.pop("active_plan", None)
+                        old["last_exit_at"] = event["time"]
+                        print("Strategy 2 exit/review alert sent: " + symbol + ": " + event["reason"])
+                if "active_plan" in old:
+                    old["active_plan"] = active
+                state[symbol] = old
+                continue
             raw1 = None
             # The 1m fallback is only requested when needed; fetch after 5m evaluation.
             signal = evaluate_strategy2(symbol, raw5, None, now)
@@ -253,7 +284,13 @@ def main():
                 print(f"Strategy 2 duplicate/cooldown suppressed: {symbol}")
                 continue
             _send_email(signal)
-            state[symbol] = {"key": key, "sent_at": now.isoformat(), "action": signal["action"]}
+            active = {"symbol": symbol, "action": signal["action"], "price": signal["entry"],
+                      "stop_loss": signal["stop_loss"], "take_profit_1": signal["take_profit_1"],
+                      "take_profit_2": signal["take_profit"], "candle_time": signal["candle_time"],
+                      "created_at": now.isoformat(), "hold_hours": signal["hold_hours"],
+                      "last_checked_candle": signal["candle_time"]}
+            state[symbol] = {"key": key, "sent_at": now.isoformat(),
+                             "action": signal["action"], "active_plan": active}
             print(f'Strategy 2 email sent: {signal["action"]} {symbol}')
         except Exception as exc:
             errors.append(f"{symbol}: {exc}")
