@@ -24,6 +24,10 @@ The third scanner independently evaluates **EUR/USD, Gold (XAU/USD), Silver (XAG
 
 The rules are two-sided and can produce BUY, SELL, or WAIT separately for each market. BTC is scanned 24/7; EUR/USD, gold, and silver use the London-session filter. USD high-impact news blocks new alerts for all four USD-quoted markets. No fixed price levels are hard-coded.
 
+## Gold and silver entry plan
+
+See [`PRECIOUS_METALS_STRATEGY.md`](PRECIOUS_METALS_STRATEGY.md) for the separate 1h trend + 15m break + 5m retest plan, including a hard 90-minute retest expiry, entry validity, stop/targets, cancellation rules and demo-testing checklist. This is a strategy specification only; it is not part of the automated worker until implemented and tested.
+
 ## Session and news filters
 
 - All FX/gold entries are permitted only during 08:00–17:00 Europe/London time, Monday to Friday.
