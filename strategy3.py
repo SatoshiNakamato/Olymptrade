@@ -129,7 +129,7 @@ def evaluate_strategy3(raw5, now, symbol):
         "hold_hours": hold_hours,
         "estimated_review_minutes": round(review_minutes),
         "candle_time": m5.index[-1].isoformat(),
-        "valid_until": (m5.index[-1] + pd.Timedelta(minutes=5)).isoformat(),
+        "valid_until": (m5.index[-1] + pd.Timedelta(minutes=10)).isoformat(),
         "reason": (f"1h/15m trends aligned; recent 5m EMA20 pullback; completed "
                    f"{side.lower()} candle broke previous candle; RSI {rsi:.1f}; "
                    "ATR/swing stop and 2R target"),
