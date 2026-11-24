@@ -1,6 +1,6 @@
 # EUR/USD + Gold Smart-Money-Concept Email Alerts
 
-Alert-only market analysis for EUR/USD and XAU/USD (with the existing optional BTC/USD scanner). The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
+Alert-only market analysis for EUR/USD, gold (XAU/USD), silver (XAG/USD), and BTC/USD. The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
 
 ## Strategy 1 — 1h structure + 15m BOS zone + 5m sweep/MSS
 
@@ -10,19 +10,19 @@ The original scanner evaluates completed candles and requires aligned 1-hour swi
 
 The second scanner looks for 15-minute trend alignment, a return to a displacement-origin zone, and a completed lower-timeframe market-structure shift. It calculates a swing-based stop and 2R target. It can use 1-minute confirmation when the 5-minute confirmation is too far from the zone.
 
-## Strategy 3 — EUR/USD 1h/15m trend pullback continuation
+## Strategy 3 — four-market 1h/15m trend pullback continuation
 
-The third scanner is dedicated to EUR/USD:
+The third scanner independently evaluates **EUR/USD, Gold (XAU/USD), Silver (XAG/USD), and Bitcoin (BTC/USD)** every workflow run. Each symbol has its own signal state and duplicate/cooldown protection.
 
 1. 1-hour EMA20/EMA50 and price must agree on direction.
 2. 15-minute EMA20/EMA50 and price must agree with the 1-hour trend.
-3. Price must have recently pulled back to the 15-minute EMA20 reference on the 5-minute chart.
-4. A completed 5-minute candle must reject the pullback and close beyond the previous 5-minute candle's high (BUY) or low (SELL).
-5. 5-minute RSI must be inside a direction-specific confirmation band to avoid chasing an extended move.
+3. Price must recently pull back to the 15-minute EMA20 reference on the 5-minute chart.
+4. A completed 5-minute candle must confirm continuation by closing beyond the previous candle's high (BUY) or low (SELL).
+5. 5-minute RSI must be inside the direction-specific confirmation band.
 6. Stop is derived from the recent 5-minute swing and ATR; TP1 is 1R and TP2 is 2R.
-7. The alert expires at the next 5-minute candle close. Recheck the live quote and do not enter on an expired alert.
+7. Each alert expires at the next 5-minute candle close. Recheck the live quote and do not enter on an expired alert.
 
-The strategy is two-sided: it can send BUY or SELL only when all filters align. The bearish setup is the inverse of the bullish setup. It does not reuse fixed price levels from an earlier market snapshot.
+The rules are two-sided and can produce BUY, SELL, or WAIT separately for each market. BTC is scanned 24/7; EUR/USD, gold, and silver use the London-session filter. USD high-impact news blocks new alerts for all four USD-quoted markets. No fixed price levels are hard-coded.
 
 ## Session and news filters
 
