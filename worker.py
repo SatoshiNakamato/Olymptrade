@@ -1,4 +1,4 @@
-"""Persistent five-minute alert worker for Voroa.
+"""Persistent 20-second alert worker for Voroa.
 
 Runs the three existing alert strategies in sequence. It never places trades.
 Configure API/email credentials as environment variables in the hosting dashboard.
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-INTERVAL_SECONDS = max(60, int(os.getenv("SCAN_INTERVAL_SECONDS", "300")))
+INTERVAL_SECONDS = max(20, int(os.getenv("SCAN_INTERVAL_SECONDS", "20")) )
 STOP = False
 
 STRATEGIES = (
