@@ -55,7 +55,7 @@ def main():
                 if "active_plan" in previous:
                     previous["active_plan"] = plan
                 state[symbol] = previous
-                    print(f"Active plan monitored through {plan.get('last_checked_candle', plan['candle_time'])}")
+                print(f"Active plan monitored through {plan.get('last_checked_candle', plan['candle_time'])}")
                 # Do not create a second plan while this one is active.
                 continue
 
