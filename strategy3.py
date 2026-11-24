@@ -171,8 +171,8 @@ def _send_email(signal):
         f'Reason: {signal["reason"]}\n\n'
         'This is an alert, not a guaranteed trade. Verify broker quote, spread, '
         'entry validity, and position size before acting. Do not enter after the '
-        'validity time or outside the stated candle range. The bot never places, '
-        'monitors, or closes orders. Forward-test on demo first.'
+        'validity time or outside the stated candle range. The bot monitors theoretical price levels '
+        'for TP1/stop/TP2 notifications only; it never places, changes, or closes orders. Forward-test on demo first.'
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
@@ -191,19 +191,6 @@ def main():
         pass
 
     for symbol in symbols:
-        # FX and precious metals use the London session filter; BTC is 24/7.
-        if symbol != "BTC/USD":
-            in_session, reason = london_session_status(now)
-            if not in_session:
-                print(f"Strategy 3 {symbol}: WAIT — {reason}")
-                continue
-
-        # USD macro events can move all four USD-quoted markets.
-        news_ok, news_reason = usd_high_impact_news_status(now)
-        if not news_ok:
-            print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
-            continue
-
         try:
             raw5 = fetch_candles(symbol, interval="5min")
             old = state.get(symbol, {})
@@ -224,6 +211,16 @@ def main():
                 state[symbol] = old
                 with open(STATE_PATH, "w", encoding="utf-8") as f:
                     json.dump(state, f, indent=2)
+                continue
+            # Session and news filters block new entries, never monitoring of an active plan.
+            if symbol != "BTC/USD":
+                in_session, reason = london_session_status(now)
+                if not in_session:
+                    print(f"Strategy 3 {symbol}: WAIT — {reason}")
+                    continue
+            news_ok, news_reason = usd_high_impact_news_status(now)
+            if not news_ok:
+                print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
                 continue
             signal = evaluate_strategy3(raw5, now, symbol)
         except Exception as exc:
