@@ -78,6 +78,8 @@ jobs:
         run: python -m unittest -v test_plan_alert_emails.py
       - name: Test retry-safe plan notification delivery
         run: python -m unittest -v test_plan_notifications.py
+      - name: Test end-to-end BUY/SELL, TP1 and TP2 email pipeline
+        run: python -m unittest -v test_alert_pipeline_e2e.py
       - name: Validate Gmail configuration
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
