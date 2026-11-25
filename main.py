@@ -6,7 +6,7 @@ from market_data import fetch_candles
 from signals import evaluate
 from email_alerts import send_alert, send_exit_alert
 from market_filters import london_session_status, usd_high_impact_news_status
-from plan_monitor import monitor_plan
+from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert
 from alert_dedupe import is_duplicate, record_sent
 
@@ -44,13 +44,11 @@ def main():
             previous = state.get(symbol, {})
             plan = previous.get("active_plan")
             if plan:
-                events = monitor_plan(candles, plan, now)
+                events = monitor_and_notify(candles, plan, now, symbol)
                 for event in events:
                     if event["type"] == "tp1":
-                        send_tp1_alert(symbol, plan["action"], plan["take_profit_1"], plan, event["time"])
                         print(f"TP1 price alert sent: {symbol}")
                     else:
-                        send_exit_alert(symbol, plan["action"], event["reason"], event["price"], plan)
                         previous.pop("active_plan", None)
                         previous["last_exit_at"] = event["time"]
                         print(f"Exit/review email sent: {symbol}: {event['reason']} at {event['price']}")
