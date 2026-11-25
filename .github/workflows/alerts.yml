@@ -78,6 +78,27 @@ jobs:
         run: python -m unittest -v test_plan_alert_emails.py
       - name: Test retry-safe plan notification delivery
         run: python -m unittest -v test_plan_notifications.py
+      - name: Validate Gmail configuration
+        env:
+          GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+
+          missing = [
+              name for name in ("GMAIL_SENDER", "GMAIL_APP_PASSWORD")
+              if not os.environ.get(name, "").strip()
+          ]
+          if missing:
+              print("::error::Missing GitHub Actions secrets: " + ", ".join(missing))
+              sys.exit(1)
+          if "@" not in os.environ["GMAIL_SENDER"]:
+              print("::error::GMAIL_SENDER must be a Gmail address.")
+              sys.exit(1)
+          print("Gmail credentials are present. Secret values were not displayed.")
+          PY
       - name: Send test email
         if: github.event_name == 'workflow_dispatch' && inputs.send_test_email
         env:
@@ -86,7 +107,7 @@ jobs:
           ALERT_TO: Ineed2pnaga@gmail.com
         run: python send_test_email.py
       - name: Scan markets and email confirmed signals
-        if: ${{ !inputs.send_test_email }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -94,7 +115,7 @@ jobs:
           SYMBOLS: EUR/USD,XAU/USD,BTC/USD
         run: python main.py
       - name: Scan markets with Strategy 2 and email confirmed signals
-        if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -102,7 +123,7 @@ jobs:
           SYMBOLS: EUR/USD,XAU/USD,BTC/USD
         run: python strategy2.py
       - name: Scan four markets with Strategy 3 and email confirmed signals
-        if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
