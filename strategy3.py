@@ -24,7 +24,7 @@ def _closed(raw, minutes, now):
     bars = d.resample(f"{minutes}min", label="left", closed="left").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last"}
     ).dropna()
-    return bars[bars.index + pd.Timedelta(minutes=minutes) <= now].copy()
+    return bars[bars.index + pd.to_timedelta(minutes, unit="min") <= now].copy()
 
 
 def _ema(series, period):
@@ -191,6 +191,7 @@ def main():
     except (OSError, json.JSONDecodeError):
         pass
 
+    scan_errors = []
     for symbol in symbols:
         try:
             raw5 = fetch_candles(symbol, interval="5min")
@@ -225,6 +226,7 @@ def main():
                 continue
             signal = evaluate_strategy3(raw5, now, symbol)
         except Exception as exc:
+            scan_errors.append(f"{symbol}: {type(exc).__name__}: {exc}")
             print(f"Strategy 3 {symbol}: scan error — {exc}")
             continue
 
@@ -260,6 +262,9 @@ def main():
             print(f'Strategy 3 email sent: {signal["action"]} {symbol}')
         except Exception as exc:
             print(f"Strategy 3 {symbol}: email error — {exc}")
+
+    if scan_errors:
+        raise RuntimeError("Strategy 3 scan failures: " + " | ".join(scan_errors))
 
 
 if __name__ == "__main__":
