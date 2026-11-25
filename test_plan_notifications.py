@@ -41,6 +41,24 @@ class PlanNotificationTests(unittest.TestCase):
         self.assertNotIn("tp1_notified", self.plan)
         self.assertEqual(self.plan["last_checked_candle"], "2026-11-25T12:00:00+00:00")
 
+    @patch("plan_notifications.send_exit_alert", side_effect=RuntimeError("SMTP unavailable"))
+    @patch("plan_notifications.send_tp1_alert")
+    def test_exit_retry_does_not_repeat_successful_tp1(self, send_tp1, send_exit):
+        both_levels = self.raw.copy()
+        both_levels.loc[0, "high"] = 1.122
+        with self.assertRaisesRegex(RuntimeError, "SMTP unavailable"):
+            monitor_and_notify(both_levels, self.plan, self.now, "EUR/USD")
+        send_tp1.assert_called_once()
+        send_exit.assert_called_once()
+        self.assertTrue(self.plan["tp1_notified"])
+        self.assertEqual(self.plan["last_checked_candle"], "2026-11-25T12:00:00+00:00")
+
+        send_exit.side_effect = None
+        events = monitor_and_notify(both_levels, self.plan, self.now, "EUR/USD")
+        self.assertEqual([event["type"] for event in events], ["exit"])
+        send_tp1.assert_called_once()
+        send_exit.assert_called_once()
+
     @patch("plan_notifications.send_exit_alert")
     def test_exit_event_uses_exit_email(self, send_exit):
         stop_raw = self.raw.copy()
