@@ -47,10 +47,10 @@ def _rsi(close, period=14):
     return 100 - 100 / (1 + rs)
 
 
-def evaluate_strategy3(raw5, now, symbol):
+def evaluate_strategy3(raw5, now, symbol, raw1h=None):
     m5 = _closed(raw5, 5, now)
     m15 = _closed(raw5, 15, now)
-    h1 = _closed(raw5, 60, now)
+    h1 = _closed(raw1h if raw1h is not None else raw5, 60, now)
     if len(m5) < 80 or len(m15) < 50 or len(h1) < 50:
         return {"symbol": symbol, "action": "WAIT",
                 "reason": "Insufficient completed 5m/15m/1h candles"}
@@ -195,6 +195,7 @@ def main():
     for symbol in symbols:
         try:
             raw5 = fetch_candles(symbol, interval="5min")
+            raw1h = fetch_candles(symbol, interval="1hour")
             old = state.get(symbol, {})
             active = old.get("active_plan")
             if active:
@@ -224,7 +225,7 @@ def main():
             if not news_ok:
                 print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
                 continue
-            signal = evaluate_strategy3(raw5, now, symbol)
+            signal = evaluate_strategy3(raw5, now, symbol, raw1h=raw1h)
         except Exception as exc:
             scan_errors.append(f"{symbol}: {type(exc).__name__}: {exc}")
             print(f"Strategy 3 {symbol}: scan error — {exc}")
