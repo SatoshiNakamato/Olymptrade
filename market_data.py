@@ -1,3 +1,9 @@
+"""No-key Yahoo Finance market data adapter.
+
+Uses Yahoo Finance's public chart endpoint; no Twelve Data API key is required.
+Yahoo's endpoint is unofficial and may throttle requests, so failures are surfaced
+and callers must not create signals from missing or incomplete candles.
+"""
 import hashlib
 import json
 import os
@@ -8,11 +14,16 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-BASE_URL = "https://api.twelvedata.com/time_series"
-COMMODITIES_URL = "https://api.twelvedata.com/commodities"
+CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 CACHE_TTL_SECONDS = 45
 DEFAULT_OUTPUTSIZE = 1600
 CACHE_DIR = Path(tempfile.gettempdir()) / "olymptrade-market-cache"
+SYMBOL_MAP = {
+    "EUR/USD": "EURUSD=X",
+    "XAU/USD": "XAUUSD=X",
+    "XAG/USD": "XAGUSD=X",
+    "BTC/USD": "BTC-USD",
+}
 
 
 class MarketDataError(RuntimeError):
@@ -32,7 +43,7 @@ def _load_cached(path: Path):
             return None
         with path.open("r", encoding="utf-8") as handle:
             payload = json.load(handle)
-        return payload if isinstance(payload, dict) and "values" in payload else None
+        return payload if isinstance(payload, dict) and "timestamp" in payload else None
     except (OSError, ValueError):
         return None
 
@@ -48,63 +59,72 @@ def _save_cached(path: Path, payload):
         pass
 
 
-def _request_json(url, params, attempts=3):
-    """Retry transient rate-limit/server errors without exposing the API key."""
-    last_message = "request failed"
-    for attempt in range(attempts):
+def _download_chart(symbol: str, interval: str):
+    ticker = SYMBOL_MAP.get(symbol.upper())
+    if not ticker:
+        raise MarketDataError(f"{symbol}: unsupported market symbol")
+
+    yahoo_interval = {"1min": "1m", "5min": "5m"}[interval]
+    # Yahoo permits a shorter lookback for one-minute candles.
+    period = "7d" if interval == "1min" else "60d"
+    url = CHART_URL.format(ticker=ticker)
+    params = {"range": period, "interval": yahoo_interval, "events": "history"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; MarketAlertBot/1.0)",
+        "Accept": "application/json",
+    }
+
+    last_error = "unknown response"
+    for attempt in range(3):
         try:
-            response = requests.get(url, params=params, timeout=15)
-            try:
-                payload = response.json()
-            except ValueError:
-                payload = {}
+            response = requests.get(url, params=params, headers=headers, timeout=20)
             if response.status_code == 429 or response.status_code >= 500:
-                last_message = (
-                    payload.get("message")
-                    or f"HTTP {response.status_code} from Twelve Data"
-                )
-                if attempt + 1 < attempts:
-                    retry_after = response.headers.get("Retry-After")
-                    try:
-                        delay = min(8.0, max(1.0, float(retry_after))) if retry_after else 2 ** attempt
-                    except ValueError:
-                        delay = 2 ** attempt
-                    time.sleep(delay)
+                last_error = f"Yahoo Finance HTTP {response.status_code}"
+                if attempt < 2:
+                    time.sleep(2 ** attempt)
                     continue
-                raise MarketDataError(last_message)
+                raise MarketDataError(f"{symbol}: {last_error}; no signal generated")
             if response.status_code >= 400:
-                # Do not include response.url: it contains the private API key.
-                message = payload.get("message") or f"HTTP {response.status_code}"
-                raise MarketDataError(f"Twelve Data returned HTTP {response.status_code}: {message}")
-            if not isinstance(payload, dict):
-                raise MarketDataError("Twelve Data returned an invalid JSON payload")
-            if payload.get("status") == "error":
-                raise MarketDataError(str(payload.get("message", "Twelve Data API error")))
-            return payload
+                raise MarketDataError(
+                    f"{symbol}: Yahoo Finance HTTP {response.status_code}; no signal generated"
+                )
+            payload = response.json()
+            chart = payload.get("chart", {})
+            if chart.get("error"):
+                message = chart["error"].get("description") or "chart endpoint error"
+                raise MarketDataError(f"{symbol}: Yahoo Finance: {message}")
+            results = chart.get("result") or []
+            if not results:
+                raise MarketDataError(f"{symbol}: Yahoo Finance returned no candles")
+            result = results[0]
+            quote_list = result.get("indicators", {}).get("quote", [])
+            if not quote_list:
+                raise MarketDataError(f"{symbol}: Yahoo Finance returned no OHLC data")
+            quote = quote_list[0]
+            timestamps = result.get("timestamp") or []
+            frame = pd.DataFrame({
+                "datetime": pd.to_datetime(timestamps, unit="s", utc=True),
+                "open": quote.get("open", []),
+                "high": quote.get("high", []),
+                "low": quote.get("low", []),
+                "close": quote.get("close", []),
+            })
+            frame = frame.dropna(subset=["datetime", "open", "high", "low", "close"])
+            frame = frame.sort_values("datetime").drop_duplicates("datetime")
+            return frame.tail(max(1, int(DEFAULT_OUTPUTSIZE if interval == "5min" else 7000)))
         except requests.RequestException as exc:
-            last_message = type(exc).__name__
-            if attempt + 1 < attempts:
+            last_error = type(exc).__name__
+            if attempt < 2:
                 time.sleep(2 ** attempt)
                 continue
-            raise MarketDataError(f"Twelve Data network error: {last_message}") from None
-    raise MarketDataError(last_message)
-
-
-def _silver_is_listed(api_key, symbol):
-    """Confirm the exact spot-metal ticker against Twelve Data's commodity directory."""
-    payload = _request_json(
-        COMMODITIES_URL,
-        {"symbol": symbol, "format": "JSON", "apikey": api_key},
-        attempts=2,
-    )
-    rows = payload if isinstance(payload, list) else payload.get("data", payload.get("commodities", []))
-    if isinstance(rows, dict):
-        rows = [rows]
-    return any(
-        isinstance(row, dict)
-        and str(row.get("symbol", "")).upper() == symbol.upper()
-        for row in (rows or [])
-    )
+            raise MarketDataError(
+                f"{symbol}: Yahoo Finance network error ({last_error}); no signal generated"
+            ) from None
+        except (ValueError, TypeError, KeyError) as exc:
+            raise MarketDataError(
+                f"{symbol}: invalid Yahoo Finance response ({type(exc).__name__})"
+            ) from None
+    raise MarketDataError(f"{symbol}: {last_error}; no signal generated")
 
 
 def fetch_candles(
@@ -112,63 +132,34 @@ def fetch_candles(
     outputsize: int = DEFAULT_OUTPUTSIZE,
     interval: str = "5min",
 ) -> pd.DataFrame:
-    api_key = os.environ.get("TWELVEDATA_API_KEY")
-    if not api_key:
-        raise MarketDataError("Missing TWELVEDATA_API_KEY secret")
     if interval not in {"1min", "5min"}:
         raise ValueError("interval must be 1min or 5min")
 
     cache_path = _cache_path(symbol, interval, outputsize)
     payload = _load_cached(cache_path)
-    if payload is None:
-        params = {
-            "symbol": symbol,
-            "interval": interval,
-            "outputsize": outputsize,
-            "timezone": "UTC",
-            "format": "JSON",
-            "apikey": api_key,
-        }
+    if payload is not None:
         try:
-            payload = _request_json(BASE_URL, params)
-        except MarketDataError as exc:
-            # Some Twelve Data plans/data routes reject large silver intraday
-            # requests with 404. Verify the ticker, then retry a smaller window.
-            if symbol.upper() != "XAG/USD" or "404" not in str(exc):
-                raise
-            try:
-                listed = _silver_is_listed(api_key, symbol)
-            except MarketDataError as lookup_exc:
-                raise MarketDataError(
-                    f"{symbol}: time-series request returned 404 and commodity lookup failed: {lookup_exc}"
-                ) from None
-            if not listed:
-                raise MarketDataError(
-                    f"{symbol}: not present in Twelve Data's commodity directory; "
-                    "check the API plan and supported silver symbol"
-                ) from None
-            params["outputsize"] = min(outputsize, 800)
-            payload = _request_json(BASE_URL, params)
+            df = pd.DataFrame(payload["timestamp"])
+            df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
+        except (KeyError, TypeError, ValueError):
+            payload = None
 
-        if "values" not in payload:
-            raise MarketDataError(
-                f"{symbol}: Twelve Data response has no candle values "
-                f"({payload.get('message', 'unknown response')})"
-            )
-        _save_cached(cache_path, payload)
+    if payload is None:
+        df = _download_chart(symbol, interval)
+        if df.empty:
+            raise MarketDataError(f"{symbol}: Yahoo Finance returned no valid candles")
+        serializable = {
+            "timestamp": df.assign(
+                datetime=df["datetime"].dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            ).to_dict(orient="records")
+        }
+        _save_cached(cache_path, serializable)
 
-    try:
-        df = pd.DataFrame(payload["values"])
-        for col in ("open", "high", "low", "close"):
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        df["datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
-    except (KeyError, TypeError, ValueError) as exc:
-        raise MarketDataError(f"{symbol}: malformed candle response ({type(exc).__name__})") from None
-
-    df = df.dropna(subset=["datetime", "open", "high", "low", "close"])
     df = df.sort_values("datetime").drop_duplicates("datetime").reset_index(drop=True)
-
-    minimum = (600 if symbol.upper() == "XAG/USD" else 1000) if interval == "5min" else 500
+    df = df.tail(int(outputsize)).reset_index(drop=True)
+    minimum = 600 if symbol.upper() == "XAG/USD" and interval == "5min" else (
+        1000 if interval == "5min" else 500
+    )
     if len(df) < minimum:
         raise MarketDataError(
             f"{symbol}: only {len(df)} {interval} candles returned; need at least {minimum}"
