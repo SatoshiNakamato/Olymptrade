@@ -20,8 +20,9 @@ DEFAULT_OUTPUTSIZE = 1600
 CACHE_DIR = Path(tempfile.gettempdir()) / "olymptrade-market-cache"
 SYMBOL_MAP = {
     "EUR/USD": "EURUSD=X",
-    "XAU/USD": "XAUUSD=X",
-    "XAG/USD": "XAGUSD=X",
+    # Yahoo spot aliases return 404; use liquid continuous futures as explicit proxies.
+    "XAU/USD": "GC=F",  # COMEX gold futures, not spot XAU/USD
+    "XAG/USD": "SI=F",  # COMEX silver futures, not spot XAG/USD
     "BTC/USD": "BTC-USD",
 }
 
