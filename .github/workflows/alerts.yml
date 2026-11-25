@@ -33,6 +33,7 @@ jobs:
           key: strategy2-state-${{ github.run_id }}
           restore-keys: strategy2-state-
       - name: Restore cross-strategy duplicate-alert state
+        id: restore-global-alert-state
         uses: actions/cache/restore@v4
         with:
           path: .global_alert_state.json
@@ -40,6 +41,13 @@ jobs:
           restore-keys: global-alert-state-
       - name: Initialize cross-strategy alert state
         run: test -f .global_alert_state.json || printf '{}\n' > .global_alert_state.json
+      - name: Verify shared deduplication cache restore
+        run: |
+          if [ "${{ steps.restore-global-alert-state.outputs.cache-hit }}" = "true" ]; then
+            echo "PASS: previous cross-strategy alert state restored from cache."
+          else
+            echo "INFO: no prior cross-strategy cache found (expected on first run)."
+          fi
       - name: Restore USD calendar cache
         uses: actions/cache/restore@v4
         with:
@@ -60,6 +68,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
+      - name: Test cross-strategy alert deduplication
+        run: python -m unittest -v test_alert_dedupe.py
       - name: Send test email
         if: github.event_name == 'workflow_dispatch' && inputs.send_test_email
         env:
