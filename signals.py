@@ -105,8 +105,10 @@ def _entry_sequence(m5,direction,z15):
     return None
 
 
-def evaluate(symbol,raw_5m,now):
-    m5,m15,h1=(_resample(raw_5m,n,now) for n in (5,15,60))
+def evaluate(symbol,raw_5m,now,raw_1h=None):
+    m5=_resample(raw_5m,5,now)
+    m15=_resample(raw_5m,15,now)
+    h1=_resample(raw_1h if raw_1h is not None else raw_5m,60,now)
     if len(m5)<100 or len(m15)<40 or len(h1)<40: return _wait(symbol,"Insufficient closed candles")
     swing,hh,hl=_structure(h1,3,3); internal,_,_=_structure(h1,1,1)
     if swing=="unclear" or internal=="unclear": return _wait(symbol,"1h swing or internal structure unclear")
