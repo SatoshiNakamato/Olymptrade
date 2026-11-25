@@ -72,6 +72,10 @@ jobs:
         run: python -m unittest -v test_alert_dedupe.py
       - name: Test email formatting and mocked SMTP delivery
         run: python -m unittest -v test_email_alerts.py
+      - name: Test completed-candle plan monitoring
+        run: python -m unittest -v test_plan_monitor.py
+      - name: Test mocked TP1 and exit notification emails
+        run: python -m unittest -v test_plan_alert_emails.py
       - name: Send test email
         if: github.event_name == 'workflow_dispatch' && inputs.send_test_email
         env:
