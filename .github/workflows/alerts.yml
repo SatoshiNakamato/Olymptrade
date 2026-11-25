@@ -32,6 +32,12 @@ jobs:
           path: .strategy2_state.json
           key: strategy2-state-${{ github.run_id }}
           restore-keys: strategy2-state-
+      - name: Restore cross-strategy duplicate-alert state
+        uses: actions/cache/restore@v4
+        with:
+          path: .global_alert_state.json
+          key: global-alert-state-${{ github.run_id }}
+          restore-keys: global-alert-state-
       - name: Restore USD calendar cache
         uses: actions/cache/restore@v4
         with:
@@ -83,6 +89,12 @@ jobs:
           ALERT_TO: Ineed2pnaga@gmail.com
           SYMBOLS: EUR/USD,XAU/USD,XAG/USD,BTC/USD
         run: python strategy3.py
+      - name: Save cross-strategy duplicate-alert state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .global_alert_state.json
+          key: global-alert-state-${{ github.run_id }}
       - name: Save USD calendar cache
         if: always()
         uses: actions/cache/save@v4
