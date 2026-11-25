@@ -5,6 +5,7 @@ Alert-only: never places broker orders.
 """
 import json
 import os
+import tempfile
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -16,6 +17,23 @@ from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent
 
 STATE_PATH = ".strategy3_state.json"
+
+
+def _save_state(state):
+    """Atomically persist state, including an empty first-run state file."""
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=".", prefix=".strategy3_state.", suffix=".tmp", delete=False) as handle:
+            json.dump(state, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_name = handle.name
+        os.replace(temp_name, STATE_PATH)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
 DEFAULT_SYMBOLS = ["EUR/USD", "XAU/USD", "XAG/USD", "BTC/USD"]
 
 
@@ -189,7 +207,9 @@ def main():
         with open(STATE_PATH, encoding="utf-8") as f:
             state = json.load(f)
     except (OSError, json.JSONDecodeError):
-        pass
+        state = {}
+    # Create a cacheable state file even when all markets return WAIT.
+    _save_state(state)
 
     scan_errors = []
     for symbol in symbols:
@@ -212,8 +232,7 @@ def main():
                 if "active_plan" in old:
                     old["active_plan"] = active
                 state[symbol] = old
-                with open(STATE_PATH, "w", encoding="utf-8") as f:
-                    json.dump(state, f, indent=2)
+                _save_state(state)
                 continue
             # Session and news filters block new entries, never monitoring of an active plan.
             if symbol != "BTC/USD":
@@ -258,13 +277,13 @@ def main():
                       "last_checked_candle": signal["candle_time"]}
             state[symbol] = {"key": key, "sent_at": now.isoformat(),
                              "action": signal["action"], "active_plan": active}
-            with open(STATE_PATH, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=2)
+            _save_state(state)
             print(f'Strategy 3 email sent: {signal["action"]} {symbol}')
         except Exception as exc:
             scan_errors.append(f"{symbol}: email delivery failed: {type(exc).__name__}")
             print(f"Strategy 3 {symbol}: email error — {exc}")
 
+    _save_state(state)
     if scan_errors:
         raise RuntimeError("Strategy 3 scan failures: " + " | ".join(scan_errors))
 
