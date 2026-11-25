@@ -147,7 +147,7 @@ def fetch_candles(
                     f"{symbol}: not present in Twelve Data's commodity directory; "
                     "check the API plan and supported silver symbol"
                 ) from None
-            params["outputsize"] = min(outputsize, 500)
+            params["outputsize"] = min(outputsize, 800)
             payload = _request_json(BASE_URL, params)
 
         if "values" not in payload:
@@ -168,7 +168,7 @@ def fetch_candles(
     df = df.dropna(subset=["datetime", "open", "high", "low", "close"])
     df = df.sort_values("datetime").drop_duplicates("datetime").reset_index(drop=True)
 
-    minimum = 1000 if interval == "5min" else 500
+    minimum = (600 if symbol.upper() == "XAG/USD" else 1000) if interval == "5min" else 500
     if len(df) < minimum:
         raise MarketDataError(
             f"{symbol}: only {len(df)} {interval} candles returned; need at least {minimum}"
