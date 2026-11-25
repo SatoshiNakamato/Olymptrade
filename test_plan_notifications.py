@@ -53,6 +53,7 @@ class PlanNotificationTests(unittest.TestCase):
         self.assertTrue(self.plan["tp1_notified"])
         self.assertEqual(self.plan["last_checked_candle"], "2026-11-25T12:00:00+00:00")
 
+        send_exit.reset_mock()
         send_exit.side_effect = None
         events = monitor_and_notify(both_levels, self.plan, self.now, "EUR/USD")
         self.assertEqual([event["type"] for event in events], ["exit"])
