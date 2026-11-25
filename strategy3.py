@@ -261,6 +261,7 @@ def main():
                 json.dump(state, f, indent=2)
             print(f'Strategy 3 email sent: {signal["action"]} {symbol}')
         except Exception as exc:
+            scan_errors.append(f"{symbol}: email delivery failed: {type(exc).__name__}")
             print(f"Strategy 3 {symbol}: email error — {exc}")
 
     if scan_errors:
