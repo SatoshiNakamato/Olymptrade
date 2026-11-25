@@ -1,5 +1,7 @@
 """Cross-strategy email deduplication for the sequential alert worker."""
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -30,4 +32,17 @@ def record_sent(symbol, action, now):
     except (OSError, json.JSONDecodeError):
         state = {}
     state[symbol] = {"action": action, "sent_at": now.astimezone(timezone.utc).isoformat()}
-    STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=str(STATE_PATH.parent),
+            prefix=".global_alert_state.", suffix=".tmp", delete=False
+        ) as handle:
+            json.dump(state, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_name = handle.name
+        os.replace(temp_name, STATE_PATH)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.unlink(temp_name)
