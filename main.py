@@ -39,7 +39,8 @@ def main():
 
     for symbol in symbols:
         try:
-            candles = fetch_candles(symbol)
+            candles = fetch_candles(symbol, interval="5min")
+            hourly = fetch_candles(symbol, interval="1hour")
             previous = state.get(symbol, {})
             plan = previous.get("active_plan")
             if plan:
@@ -72,7 +73,7 @@ def main():
                     print(f"XAU/USD new entry skipped: {news_reason}")
                     continue
 
-            signal = evaluate(symbol, candles, now)
+            signal = evaluate(symbol, candles, now, raw_1h=hourly)
             print(json.dumps(signal, default=str))
             if signal["action"] == "WAIT":
                 continue
