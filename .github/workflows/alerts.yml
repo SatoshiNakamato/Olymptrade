@@ -7,6 +7,11 @@ on:
         required: false
         type: boolean
         default: false
+      run_pipeline_tests_only:
+        description: "Run automated tests only; do not send email or scan markets"
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: "*/5 * * * *"
 permissions:
@@ -81,6 +86,7 @@ jobs:
       - name: Test end-to-end BUY/SELL, TP1 and TP2 email pipeline
         run: python -m unittest -v test_alert_pipeline_e2e.py
       - name: Validate Gmail configuration
+        if: ${{ !inputs.run_pipeline_tests_only }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -102,14 +108,14 @@ jobs:
           print("Gmail credentials are present. Secret values were not displayed.")
           PY
       - name: Send test email
-        if: github.event_name == 'workflow_dispatch' && inputs.send_test_email
+        if: github.event_name == 'workflow_dispatch' && inputs.send_test_email && !inputs.run_pipeline_tests_only
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
         run: python send_test_email.py
       - name: Scan markets and email confirmed signals
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
+        if: ${{ !inputs.run_pipeline_tests_only && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -117,7 +123,7 @@ jobs:
           SYMBOLS: EUR/USD,XAU/USD,BTC/USD
         run: python main.py
       - name: Scan markets with Strategy 2 and email confirmed signals
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
+        if: ${{ !inputs.run_pipeline_tests_only && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -125,7 +131,7 @@ jobs:
           SYMBOLS: EUR/USD,XAU/USD,BTC/USD
         run: python strategy2.py
       - name: Scan four markets with Strategy 3 and email confirmed signals
-        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
+        if: ${{ !inputs.run_pipeline_tests_only && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
