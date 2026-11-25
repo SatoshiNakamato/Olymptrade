@@ -62,7 +62,6 @@ jobs:
       - name: Scan markets and email confirmed signals
         if: ${{ !inputs.send_test_email }}
         env:
-          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
@@ -71,7 +70,6 @@ jobs:
       - name: Scan markets with Strategy 2 and email confirmed signals
         if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
-          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
@@ -80,7 +78,6 @@ jobs:
       - name: Scan four markets with Strategy 3 and email confirmed signals
         if: ${{ always() && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
-          TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
