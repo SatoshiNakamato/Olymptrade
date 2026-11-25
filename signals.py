@@ -8,7 +8,7 @@ def _resample(raw, minutes, now):
     d = raw.set_index("datetime").sort_index()
     b = d.resample(f"{minutes}min", label="left", closed="left").agg(
         {"open":"first","high":"max","low":"min","close":"last"}).dropna()
-    return b[b.index + pd.Timedelta(minutes=minutes) <= now]
+    return b[b.index + pd.to_timedelta(minutes, unit="min") <= now]
 
 
 def _pivots(df, left=2, right=2):
@@ -63,7 +63,7 @@ def _wait(symbol,reason):
 
 
 def _entry_sequence(m5,direction,z15):
-    ztime=pd.Timestamp(z15["created_time"]) + pd.Timedelta(minutes=15)
+    ztime=pd.Timestamp(z15["created_time"]) + pd.to_timedelta(15, unit="min")
     touched=[i for i,t in enumerate(m5.index) if t>=ztime and m5.low.iloc[i]<=z15["high"] and m5.high.iloc[i]>=z15["low"]]
     if not touched: return None
     first=touched[0]; highs,lows=_pivots(m5,2,2)
