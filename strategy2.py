@@ -19,7 +19,7 @@ def _closed(raw, minutes, now):
     bars = d.resample(f"{minutes}min", label="left", closed="left").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last"}
     ).dropna()
-    return bars[bars.index + pd.Timedelta(minutes=minutes) <= now]
+    return bars[bars.index + pd.to_timedelta(minutes, unit="min") <= now]
 
 
 def _pivots(df, left=2, right=2):
@@ -90,7 +90,7 @@ def _zones(m15, direction):
 
 def _find_mss(df, direction, zone, now):
     """Require a completed candle close through the last opposing pivot after zone touch."""
-    zone_ready = pd.Timestamp(zone["time"]) + pd.Timedelta(minutes=15)
+    zone_ready = pd.Timestamp(zone["time"]) + pd.to_timedelta(15, unit="min")
     touch = [i for i, t in enumerate(df.index)
              if t >= zone_ready and df.low.iloc[i] <= zone["high"] and df.high.iloc[i] >= zone["low"]]
     if not touch:
