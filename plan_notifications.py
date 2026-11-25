@@ -13,6 +13,7 @@ def monitor_and_notify(raw5, plan, now, symbol):
     had_tp1_flag = "tp1_notified" in plan
 
     events = monitor_plan(raw5, plan, now)
+    tp1_delivered = False
     try:
         for event in events:
             if event["type"] == "tp1":
@@ -20,6 +21,8 @@ def monitor_and_notify(raw5, plan, now, symbol):
                     symbol, plan["action"], plan["take_profit_1"],
                     plan, event["time"]
                 )
+                tp1_delivered = True
+                plan["tp1_notified"] = True
             else:
                 send_exit_alert(
                     symbol, plan["action"], event["reason"],
@@ -27,7 +30,9 @@ def monitor_and_notify(raw5, plan, now, symbol):
                 )
     except Exception:
         plan["last_checked_candle"] = checkpoint_before
-        if had_tp1_flag:
+        if tp1_delivered:
+            plan["tp1_notified"] = True
+        elif had_tp1_flag:
             plan["tp1_notified"] = tp1_before
         else:
             plan.pop("tp1_notified", None)
