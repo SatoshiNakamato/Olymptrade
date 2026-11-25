@@ -38,6 +38,8 @@ jobs:
           path: .global_alert_state.json
           key: global-alert-state-${{ github.run_id }}
           restore-keys: global-alert-state-
+      - name: Initialize cross-strategy alert state
+        run: test -f .global_alert_state.json || printf '{}\n' > .global_alert_state.json
       - name: Restore USD calendar cache
         uses: actions/cache/restore@v4
         with:
