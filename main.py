@@ -8,7 +8,7 @@ from email_alerts import send_alert, send_exit_alert
 from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert
-from alert_dedupe import is_duplicate, record_sent
+from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
 
 STATE_PATH = ".signal_state.json"
 
@@ -96,8 +96,12 @@ def main():
                 print(f"Duplicate/cooldown suppressed: {symbol}")
                 continue
 
-            send_alert(signal)
-            record_sent(symbol, signal["action"], now)
+            sent = send_if_not_duplicate(
+                symbol, signal["action"], now, lambda: send_alert(signal)
+            )
+            if not sent:
+                print(f"Cross-strategy duplicate suppressed at send lock: {symbol}")
+                continue
             active = {**signal, "created_at": now.isoformat(),
                       "hold_hours": int(signal.get("hold_hours", 5)),
                       "last_checked_candle": signal["candle_time"]}
