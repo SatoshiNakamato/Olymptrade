@@ -23,6 +23,7 @@ SYMBOL_MAP = {
     "GBP/USD": "GBPUSD",
     "USD/JPY": "USDJPY",
     "AUD/USD": "AUDUSD",
+    "US500": "US500",
     "XAU/USD": "XAUUSD",
     "XAG/USD": "XAGUSD",
     "BTC/USD": "BTCUSD",
