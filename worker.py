@@ -15,7 +15,8 @@ from market_data import fetch_candles
 
 ROOT = Path(__file__).resolve().parent
 INTERVAL_SECONDS = 20
-DATA_INTERVALS = ("5min", "1hour")
+DATA_INTERVALS = ("5min", "1hour", "1min")
+REQUIRED_INTERVALS = ("5min", "1hour")
 STOP = False
 
 STRATEGIES = (
@@ -106,7 +107,7 @@ def warm_market_data():
 
     available = {
         symbol for symbol in symbols
-        if all((symbol, interval) in succeeded for interval in DATA_INTERVALS)
+        if all((symbol, interval) in succeeded for interval in REQUIRED_INTERVALS)
     }
     elapsed = time.monotonic() - started
     log(
