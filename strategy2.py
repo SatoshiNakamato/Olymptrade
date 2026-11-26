@@ -197,7 +197,7 @@ def _send_email(signal):
     password = os.environ["GMAIL_APP_PASSWORD"]
     recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
     symbol = signal["symbol"]
-    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol == "BTC/USD" else 3
+    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol in {"BTC/USD", "US500"} else 3
     fmt = lambda x: f"{float(x):.{digits}f}"
     msg = EmailMessage()
     msg["Subject"] = f'{signal["action"]}: {symbol} | Strategy 2 confirmed'
