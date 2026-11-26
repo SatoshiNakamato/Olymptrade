@@ -1,6 +1,6 @@
 """Strategy 3: multi-market trend pullback continuation alerts.
 
-Scans EUR/USD, XAU/USD (gold), XAG/USD (silver), and BTC/USD.
+Scans the shared FX, metals, crypto, and US500 watchlist.
 Alert-only: never places broker orders.
 """
 import json
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from market_data import fetch_candles
-from market_filters import london_session_status, usd_high_impact_news_status
+from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent
@@ -34,7 +34,7 @@ def _save_state(state):
             os.unlink(temp_name)
 
 
-DEFAULT_SYMBOLS = ["EUR/USD", "XAU/USD", "XAG/USD", "BTC/USD"]
+DEFAULT_SYMBOLS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "BTC/USD", "US500"]
 
 
 def _closed(raw, minutes, now):
@@ -156,7 +156,7 @@ def evaluate_strategy3(raw5, now, symbol, raw1h=None):
 
 
 def _fmt(symbol, value):
-    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol == "BTC/USD" else 3
+    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol in {"BTC/USD", "US500"} else 3
     return f"{float(value):.{digits}f}"
 
 
@@ -233,11 +233,15 @@ def main():
                 _save_state(state)
                 continue
             # Session and news filters block new entries, never monitoring of an active plan.
-            if symbol != "BTC/USD":
+            if symbol == "US500":
+                in_session, reason = new_york_session_status(now)
+            elif symbol != "BTC/USD":
                 in_session, reason = london_session_status(now)
-                if not in_session:
-                    print(f"Strategy 3 {symbol}: WAIT — {reason}")
-                    continue
+            else:
+                in_session, reason = True, "Crypto trades 24/7"
+            if not in_session:
+                print(f"Strategy 3 {symbol}: WAIT — {reason}")
+                continue
             news_ok, news_reason = usd_high_impact_news_status(now)
             if not news_ok:
                 print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
