@@ -3,6 +3,7 @@ import fcntl
 import json
 import os
 import tempfile
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -68,7 +69,7 @@ def record_sent(symbol, action, now):
             os.unlink(temp_name)
 
 
-def send_if_not_duplicate(symbol, action, now, send):
+def send_if_not_duplicate(symbol, action, now, send, strategy=""):
     """Send once across concurrent workers; record only after successful SMTP send.
 
     Returns True when this call sent the alert, False when a duplicate was
@@ -76,7 +77,24 @@ def send_if_not_duplicate(symbol, action, now, send):
     """
     with _state_lock():
         if is_duplicate(symbol, action, now):
+            print(f"{strategy or 'Scanner'} duplicate suppressed at shared send lock: {symbol} {action}", flush=True)
             return False
+        label = f"{strategy} " if strategy else ""
+        started_at = datetime.now(timezone.utc)
+        started = time.monotonic()
+        print(
+            f"[{started_at.isoformat(timespec='milliseconds')}] "
+            f"{label}ALERT_SEND_START {symbol} {action}",
+            flush=True,
+        )
         send()
+        sent_at = datetime.now(timezone.utc)
+        elapsed = time.monotonic() - started
         record_sent(symbol, action, now)
+        print(
+            f"[{sent_at.isoformat(timespec='milliseconds')}] "
+            f"{label}ALERT_SEND_SUCCESS {symbol} {action} "
+            f"smtp_seconds={elapsed:.2f}",
+            flush=True,
+        )
         return True
