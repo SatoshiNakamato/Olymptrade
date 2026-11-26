@@ -9,8 +9,8 @@ from pathlib import Path
 
 from market_data import fetch_candles
 
-ROOT = Path(os.environ["VOROA_ROOT"]).resolve()
-SYMBOL = os.environ["VOROA_SYMBOL"]
+ROOT = Path(os.environ.get("VOROA_ROOT", Path(__file__).resolve().parent)).resolve()
+SYMBOL = os.environ.get("VOROA_SYMBOL", "TEST/MARKET")
 STRATEGIES = ("main.py", "strategy2.py", "strategy3.py")
 SCAN_INTERVAL_SECONDS = 20
 STRATEGY_TIMEOUT_SECONDS = 240
