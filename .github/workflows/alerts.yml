@@ -75,8 +75,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
-      - name: Test worker market-data prefetch
-        run: python -m unittest -v test_worker.py
+      - name: Test eight independent Voroa market agents and isolated state
+        run: python -m unittest -v test_worker.py test_market_agent.py
       - name: Test pandas-free trade sizing suggestions
         run: python -m unittest -v test_trade_advisor.py
       - name: Test cross-strategy alert deduplication
