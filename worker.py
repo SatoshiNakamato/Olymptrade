@@ -1,7 +1,6 @@
-"""Persistent 20-second alert worker for Voroa.
+"""Persistent Voroa supervisor for three independent strategy scanner workers.
 
-Runs the three existing alert strategies in sequence. It never places trades.
-Configure API/email credentials as environment variables in the hosting dashboard.
+Each strategy runs in its own subprocess concurrently. This service never trades.
 """
 import os
 import signal
@@ -16,7 +15,8 @@ from market_data import fetch_candles
 
 ROOT = Path(__file__).resolve().parent
 INTERVAL_SECONDS = 20
-DATA_INTERVALS = ("5min", "1hour")
+DATA_INTERVALS = ("5min", "1hour", "1min")
+REQUIRED_INTERVALS = ("5min", "1hour")
 STOP = False
 
 STRATEGIES = (
@@ -107,7 +107,7 @@ def warm_market_data():
 
     available = {
         symbol for symbol in symbols
-        if all((symbol, interval) in succeeded for interval in DATA_INTERVALS)
+        if all((symbol, interval) in succeeded for interval in REQUIRED_INTERVALS)
     }
     elapsed = time.monotonic() - started
     log(
@@ -126,19 +126,29 @@ def run_cycle():
         log("CYCLE skipped: no market has a complete fresh 5m/1h data set.")
         return
 
-    for script, configured_symbols in STRATEGIES:
-        if STOP:
-            break
-        symbols = ",".join(
-            symbol for symbol in configured_symbols.split(",")
-            if symbol in available
-        )
-        if not symbols:
-            log(f"SKIP {script}: no markets have complete fresh data.")
-            continue
-        code = run_strategy(script, symbols)
-        if code:
-            failures.append(f"{script}={code}")
+    # Run one isolated process per strategy. A slow scanner cannot hold up
+    # the other strategies; shared alert deduplication is protected by a file lock.
+    jobs = {}
+    with ThreadPoolExecutor(max_workers=len(STRATEGIES)) as pool:
+        for script, configured_symbols in STRATEGIES:
+            symbols = ",".join(
+                symbol for symbol in configured_symbols.split(",")
+                if symbol in available
+            )
+            if not symbols:
+                log(f"SKIP {script}: no markets have complete fresh data.")
+                continue
+            jobs[pool.submit(run_strategy, script, symbols)] = script
+
+        for future in as_completed(jobs):
+            script = jobs[future]
+            try:
+                code = future.result()
+            except Exception as exc:
+                code = 1
+                log(f"ERROR {script}: worker future failed: {type(exc).__name__}: {exc}")
+            if code:
+                failures.append(f"{script}={code}")
     if failures:
         log("CYCLE completed with strategy errors: " + ", ".join(failures))
     elif len(available) < len({
@@ -156,7 +166,7 @@ def main():
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
 
-    log("Voroa alert worker started.")
+    log("Voroa supervisor started: three independent strategy workers.")
     log(f"Scan interval: {INTERVAL_SECONDS} seconds.")
     log("Markets: EUR/USD, XAU/USD, XAG/USD, BTC/USD.")
     log("Mode: alert-only; no broker orders are placed.")

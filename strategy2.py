@@ -8,7 +8,7 @@ from market_data import fetch_candles
 from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
-from alert_dedupe import is_duplicate, record_sent
+from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
 from trade_advisor import recommend_trade, format_trade_advice
 
 STATE_PATH = ".strategy2_state.json"
@@ -283,6 +283,14 @@ def main():
             print(json.dumps(signal, default=str))
             if signal["action"] == "WAIT":
                 continue
+            detected_at = datetime.now(timezone.utc)
+            print(
+                f"[{detected_at.isoformat(timespec='milliseconds')}] "
+                f"Strategy 2 SIGNAL_DETECTED {symbol} {signal['action']} "
+                f"confirmation={signal.get('confirmation_time')} "
+                f"timeframe={signal.get('confirmation_timeframe')}",
+                flush=True,
+            )
             key = f'{symbol}:{signal["action"]}:{signal["candle_time"]}:{signal["confirmation_timeframe"]}'
             old = state.get(symbol, {})
             last = old.get("sent_at")
@@ -293,8 +301,13 @@ def main():
             if old.get("key") == key or not cooldown:
                 print(f"Strategy 2 duplicate/cooldown suppressed: {symbol}")
                 continue
-            _send_email(signal)
-            record_sent(symbol, signal["action"], now)
+            sent = send_if_not_duplicate(
+                symbol, signal["action"], now, lambda: _send_email(signal),
+                strategy="Strategy 2",
+            )
+            if not sent:
+                print(f"Strategy 2 duplicate suppressed at send lock: {symbol}")
+                continue
             active = {"symbol": symbol, "action": signal["action"], "price": signal["entry"],
                       "stop_loss": signal["stop_loss"], "take_profit_1": signal["take_profit_1"],
                       "take_profit_2": signal["take_profit"], "candle_time": signal["candle_time"],
