@@ -15,7 +15,7 @@ from market_data import fetch_candles
 
 ROOT = Path(__file__).resolve().parent
 INTERVAL_SECONDS = 20
-DATA_INTERVALS = ("5min", "1hour", "1min")
+DATA_INTERVALS = ("5min", "1hour")
 REQUIRED_INTERVALS = ("5min", "1hour")
 STRATEGY_TIMEOUT_SECONDS = 240
 STOP = False
