@@ -38,6 +38,11 @@ def _save_state(state):
 DEFAULT_SYMBOLS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "BTC/USD", "US500"]
 
 
+def _requires_usd_news_filter(symbol):
+    """Return whether this market is gated by the USD high-impact event calendar."""
+    return symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}
+
+
 def _closed(raw, minutes, now):
     d = raw.set_index("datetime").sort_index()
     bars = d.resample(f"{minutes}min", label="left", closed="left").agg(
@@ -251,7 +256,7 @@ def main():
                 continue
             # Match Strategies 1 and 2: USD calendar blocks FX, metals and US500 entries,
             # but does not block BTC/USD, which trades 24/7 and is not a USD event session.
-            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}:
+            if _requires_usd_news_filter(symbol):
                 news_ok, news_reason = usd_high_impact_news_status(now)
                 if not news_ok:
                     print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
