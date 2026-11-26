@@ -5,13 +5,13 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from market_data import fetch_candles
-from market_filters import london_session_status, usd_high_impact_news_status
+from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent
 
 STATE_PATH = ".strategy2_state.json"
-SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
+SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500").split(",") if s.strip()]
 
 
 def _closed(raw, minutes, now):
@@ -264,10 +264,14 @@ def main():
                 signal = evaluate_strategy2(symbol, raw5, raw1, now)
             # FX and gold follow the London-session filter; crypto trades 24/7.
             is_crypto = symbol.upper().startswith(("BTC/", "ETH/"))
-            if not is_crypto and not in_session:
-                print(f"Strategy 2 {symbol}: WAIT — {why}")
+            if symbol == "US500":
+                market_open, market_reason = new_york_session_status(now)
+            else:
+                market_open, market_reason = in_session, why
+            if not is_crypto and not market_open:
+                print(f"Strategy 2 {symbol}: WAIT — {market_reason}")
                 continue
-            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD"}:
+            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}:
                 ok, news_reason = usd_high_impact_news_status(now)
                 if not ok:
                     print(f"Strategy 2 {symbol}: WAIT — {news_reason}")
