@@ -47,9 +47,11 @@ def _load_calendar_cache():
 
 
 def _save_calendar_cache(events):
+    temp = CALENDAR_CACHE_PATH.with_name(
+        CALENDAR_CACHE_PATH.name + f".{os.getpid()}.tmp"
+    )
     try:
         CALENDAR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        temp = CALENDAR_CACHE_PATH.with_suffix(".tmp")
         temp.write_text(
             json.dumps({"fetched_at": time.time(), "events": events}),
             encoding="utf-8",
@@ -58,6 +60,11 @@ def _save_calendar_cache(events):
     except (OSError, TypeError, ValueError):
         # A cache write failure must not invalidate a successfully fetched calendar.
         pass
+    finally:
+        try:
+            temp.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _fetch_calendar():
