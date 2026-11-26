@@ -15,7 +15,7 @@ import pandas as pd
 import requests
 
 BASE_URL = "https://biquote.io"
-CACHE_TTL_SECONDS = 20  # Keep scans fresh; the worker prewarms this cache each cycle.
+CACHE_TTL_SECONDS = 20  # Keep scans fresh; each strategy process reuses recent per-market data.
 DEFAULT_OUTPUTSIZE = 1600
 CACHE_DIR = Path(tempfile.gettempdir()) / "olymptrade-market-cache"
 SYMBOL_MAP = {
