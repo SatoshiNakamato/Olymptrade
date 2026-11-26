@@ -283,6 +283,14 @@ def main():
             print(json.dumps(signal, default=str))
             if signal["action"] == "WAIT":
                 continue
+            detected_at = datetime.now(timezone.utc)
+            print(
+                f"[{detected_at.isoformat(timespec='milliseconds')}] "
+                f"Strategy 2 SIGNAL_DETECTED {symbol} {signal['action']} "
+                f"confirmation={signal.get('confirmation_time')} "
+                f"timeframe={signal.get('confirmation_timeframe')}",
+                flush=True,
+            )
             key = f'{symbol}:{signal["action"]}:{signal["candle_time"]}:{signal["confirmation_timeframe"]}'
             old = state.get(symbol, {})
             last = old.get("sent_at")
@@ -294,7 +302,8 @@ def main():
                 print(f"Strategy 2 duplicate/cooldown suppressed: {symbol}")
                 continue
             sent = send_if_not_duplicate(
-                symbol, signal["action"], now, lambda: _send_email(signal)
+                symbol, signal["action"], now, lambda: _send_email(signal),
+                strategy="Strategy 2",
             )
             if not sent:
                 print(f"Strategy 2 duplicate suppressed at send lock: {symbol}")
