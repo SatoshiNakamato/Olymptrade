@@ -140,7 +140,14 @@ def run_cycle():
         if code:
             failures.append(f"{script}={code}")
     if failures:
-        log("CYCLE completed with errors: " + ", ".join(failures))
+        log("CYCLE completed with strategy errors: " + ", ".join(failures))
+    elif len(available) < len({
+        symbol.strip()
+        for _, configured in STRATEGIES
+        for symbol in configured.split(",")
+        if symbol.strip()
+    }):
+        log("CYCLE completed with partial market coverage; failed datasets were skipped safely.")
     else:
         log("CYCLE completed: all three strategies exited successfully")
 
