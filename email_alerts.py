@@ -4,7 +4,11 @@ from email.message import EmailMessage
 
 
 def _price(value, symbol):
-    return f"{value:.5f}" if symbol == "EUR/USD" else f"{value:.2f}"
+    if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"}:
+        return f"{value:.5f}"
+    if symbol == "USD/JPY":
+        return f"{value:.3f}"
+    return f"{value:.2f}" if symbol == "BTC/USD" else f"{value:.3f}"
 
 
 def send_alert(signal, test_mode=False):
