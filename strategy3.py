@@ -1,6 +1,6 @@
 """Strategy 3: multi-market trend pullback continuation alerts.
 
-Scans EUR/USD, XAU/USD (gold), XAG/USD (silver), and BTC/USD.
+Scans EUR/USD, GBP/USD, USD/JPY, AUD/USD, XAU/USD (gold), XAG/USD (silver), and BTC/USD.
 Alert-only: never places broker orders.
 """
 import json
@@ -34,7 +34,7 @@ def _save_state(state):
             os.unlink(temp_name)
 
 
-DEFAULT_SYMBOLS = ["EUR/USD", "XAU/USD", "XAG/USD", "BTC/USD"]
+DEFAULT_SYMBOLS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "BTC/USD"]
 
 
 def _closed(raw, minutes, now):
@@ -156,7 +156,7 @@ def evaluate_strategy3(raw5, now, symbol, raw1h=None):
 
 
 def _fmt(symbol, value):
-    digits = 5 if symbol == "EUR/USD" else 2 if symbol == "BTC/USD" else 3
+    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol == "BTC/USD" else 3
     return f"{float(value):.{digits}f}"
 
 
