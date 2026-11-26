@@ -128,7 +128,7 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
-          SYMBOLS: EUR/USD,XAU/USD,BTC/USD
+          SYMBOLS: EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,BTC/USD
         run: python strategy2.py
       - name: Scan seven markets with Strategy 3 and email confirmed signals
         if: ${{ !inputs.run_pipeline_tests_only && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
