@@ -25,7 +25,8 @@ class MarketAgentTests(unittest.TestCase):
             return FakeProcess(script)
 
         try:
-            with patch.object(market_agent, "launch_strategy", side_effect=fake_launch):
+            with patch.object(market_agent, "warm_symbol_data"), \
+                 patch.object(market_agent, "launch_strategy", side_effect=fake_launch):
                 market_agent.run_cycle()
             self.assertCountEqual(
                 launched, ["main.py", "strategy2.py", "strategy3.py"]
