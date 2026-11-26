@@ -1,6 +1,6 @@
-"""Persistent Voroa supervisor for three independent strategy scanner workers.
+"""Persistent Voroa supervisor for three independent strategy scanner processes.
 
-Each strategy runs in its own subprocess concurrently. This service never trades.
+Each strategy runs in its own OS process. This service never places trades.
 """
 import os
 import signal
@@ -17,7 +17,9 @@ ROOT = Path(__file__).resolve().parent
 INTERVAL_SECONDS = 20
 DATA_INTERVALS = ("5min", "1hour", "1min")
 REQUIRED_INTERVALS = ("5min", "1hour")
+STRATEGY_TIMEOUT_SECONDS = 240
 STOP = False
+RUNNING_PROCESSES = {}
 
 STRATEGIES = (
     ("main.py", "EUR/USD,XAU/USD,BTC/USD"),
@@ -34,10 +36,18 @@ def log(message):
 def request_stop(signum, frame):
     global STOP
     STOP = True
-    log(f"Received stop signal {signum}; finishing current strategy.")
+    log(f"Received stop signal {signum}; stopping active strategy processes.")
+    for script, process in list(RUNNING_PROCESSES.items()):
+        try:
+            if process.poll() is None:
+                log(f"STOP_REQUEST {script} pid={process.pid}")
+                process.terminate()
+        except (OSError, ProcessLookupError):
+            pass
 
 
 def run_strategy(script, symbols):
+    """Run a one-off helper (for example, an explicitly requested email test)."""
     path = ROOT / script
     if not path.is_file():
         log(f"SKIP {script}: file not found at {path}")
@@ -54,10 +64,10 @@ def run_strategy(script, symbols):
             cwd=str(ROOT),
             env=env,
             check=False,
-            timeout=240,
+            timeout=STRATEGY_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        log(f"ERROR {script}: exceeded 240-second timeout")
+        log(f"ERROR {script}: exceeded {STRATEGY_TIMEOUT_SECONDS}-second timeout")
         return 124
     except Exception as exc:
         log(f"ERROR {script}: {type(exc).__name__}: {exc}")
@@ -71,25 +81,20 @@ def run_strategy(script, symbols):
 
 
 def warm_market_data():
-    """Fetch shared candle sets concurrently before the strategies scan.
-
-    The strategy scripts then read the same short-lived on-disk cache instead
-    of serially waiting on the quote API for every market/timeframe.
-    """
+    """Fetch shared candle sets concurrently before the strategy processes start."""
     symbols = sorted({
         symbol.strip()
         for _, configured in STRATEGIES
         for symbol in configured.split(",")
         if symbol.strip()
     })
-    jobs = {
-        (symbol, interval): None
+    jobs = [
+        (symbol, interval)
         for symbol in symbols
         for interval in DATA_INTERVALS
-    }
+    ]
     started = time.monotonic()
     succeeded = set()
-    failures = []
 
     with ThreadPoolExecutor(max_workers=min(8, max(1, len(jobs)))) as pool:
         pending = {
@@ -102,7 +107,6 @@ def warm_market_data():
                 future.result()
                 succeeded.add((symbol, interval))
             except Exception as exc:
-                failures.append((symbol, interval, f"{type(exc).__name__}: {exc}"))
                 log(f"DATA ERROR {symbol} {interval}: {type(exc).__name__}: {exc}")
 
     available = {
@@ -117,6 +121,54 @@ def warm_market_data():
     return available
 
 
+def _launch_strategy(script, symbols):
+    path = ROOT / script
+    if not path.is_file():
+        log(f"SKIP {script}: file not found at {path}")
+        return None
+
+    env = os.environ.copy()
+    env["SYMBOLS"] = symbols
+    env["PYTHONUNBUFFERED"] = "1"
+    try:
+        process = subprocess.Popen(
+            [sys.executable, "-u", str(path)],
+            cwd=str(ROOT),
+            env=env,
+        )
+    except Exception as exc:
+        log(f"ERROR {script}: process launch failed: {type(exc).__name__}: {exc}")
+        return None
+
+    log(f"START {script} | pid={process.pid} | symbols={symbols}")
+    return process
+
+
+def _wait_for_strategy(script, process, launched_at):
+    remaining = max(
+        0.1,
+        STRATEGY_TIMEOUT_SECONDS - (time.monotonic() - launched_at),
+    )
+    try:
+        code = process.wait(timeout=remaining)
+    except subprocess.TimeoutExpired:
+        log(f"ERROR {script}: exceeded {STRATEGY_TIMEOUT_SECONDS}-second runtime; terminating")
+        process.terminate()
+        try:
+            code = process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            code = process.wait()
+
+    if code == 0:
+        log(f"FINISH {script}: exit code 0")
+    elif STOP:
+        log(f"STOPPED {script}: exit code {code}")
+    else:
+        log(f"ERROR {script}: exit code {code}")
+    return code
+
+
 def run_cycle():
     failures = []
     available = warm_market_data()
@@ -126,11 +178,14 @@ def run_cycle():
         log("CYCLE skipped: no market has a complete fresh 5m/1h data set.")
         return
 
-    # Run one isolated process per strategy. A slow scanner cannot hold up
-    # the other strategies; shared alert deduplication is protected by a file lock.
-    jobs = {}
-    with ThreadPoolExecutor(max_workers=len(STRATEGIES)) as pool:
+    # Launch every scanner process before waiting for any scanner to finish.
+    # This makes the independence explicit and prevents one slow strategy from
+    # delaying the start of either of the other two.
+    launched = {}
+    try:
         for script, configured_symbols in STRATEGIES:
+            if STOP:
+                break
             symbols = ",".join(
                 symbol for symbol in configured_symbols.split(",")
                 if symbol in available
@@ -138,17 +193,30 @@ def run_cycle():
             if not symbols:
                 log(f"SKIP {script}: no markets have complete fresh data.")
                 continue
-            jobs[pool.submit(run_strategy, script, symbols)] = script
 
-        for future in as_completed(jobs):
-            script = jobs[future]
-            try:
-                code = future.result()
-            except Exception as exc:
-                code = 1
-                log(f"ERROR {script}: worker future failed: {type(exc).__name__}: {exc}")
-            if code:
+            process = _launch_strategy(script, symbols)
+            if process is None:
+                failures.append(f"{script}=launch_failed")
+                continue
+            launched[script] = (process, time.monotonic())
+            RUNNING_PROCESSES[script] = process
+
+        log(
+            f"STRATEGY_PROCESSES_LAUNCHED count={len(launched)}/"
+            f"{len(STRATEGIES)}; all launched processes now run independently."
+        )
+
+        # All children are already running. Waiting in this loop does not
+        # serialize their execution; each child continues scanning in parallel.
+        for script, (process, launched_at) in launched.items():
+            code = _wait_for_strategy(script, process, launched_at)
+            if code and not STOP:
                 failures.append(f"{script}={code}")
+    finally:
+        RUNNING_PROCESSES.clear()
+
+    if STOP:
+        return
     if failures:
         log("CYCLE completed with strategy errors: " + ", ".join(failures))
     elif len(available) < len({
@@ -158,15 +226,18 @@ def run_cycle():
         if symbol.strip()
     }):
         log("CYCLE completed with partial market coverage; failed datasets were skipped safely.")
+    elif len(launched) != len(STRATEGIES):
+        log(f"CYCLE completed with {len(launched)}/{len(STRATEGIES)} strategy processes launched.")
     else:
-        log("CYCLE completed: all three strategies exited successfully")
+        log("CYCLE completed: all three independent strategy processes exited successfully")
 
 
 def main():
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
 
-    log("Voroa supervisor started: three independent strategy workers.")
+    log("VOROA_WORKER_MODE=independent_os_processes_v2")
+    log("Voroa supervisor started: launching three independent strategy processes.")
     log(f"Scan interval: {INTERVAL_SECONDS} seconds.")
     log("Markets: EUR/USD, XAU/USD, XAG/USD, BTC/USD.")
     log("Mode: alert-only; no broker orders are placed.")
@@ -183,7 +254,6 @@ def main():
 
     next_run = time.monotonic()
     while not STOP:
-        cycle_started = time.monotonic()
         run_cycle()
         if STOP:
             break

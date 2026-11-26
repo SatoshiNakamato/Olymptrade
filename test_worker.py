@@ -1,35 +1,47 @@
-"""Tests for concurrent market-data warming in the persistent worker."""
+"""Tests for independent strategy processes and market-data prefetch."""
 import unittest
-from threading import Barrier
 from unittest.mock import patch
 
 import worker
 
 
-class WorkerPrefetchTests(unittest.TestCase):
+class WorkerProcessTests(unittest.TestCase):
 
-    def test_three_strategy_workers_start_without_waiting_for_each_other(self):
+    def test_all_strategy_processes_launch_before_any_process_is_waited_on(self):
         original_strategies = worker.STRATEGIES
         worker.STRATEGIES = (
             ("main.py", "EUR/USD"),
             ("strategy2.py", "EUR/USD"),
             ("strategy3.py", "EUR/USD"),
         )
-        start_barrier = Barrier(3)
-        started = []
+        launched = []
 
-        def fake_run_strategy(script, symbols):
-            start_barrier.wait(timeout=5)
-            started.append(script)
-            return 0
+        class FakeProcess:
+            def __init__(self, pid):
+                self.pid = pid
+
+            def wait(self, timeout=None):
+                # This assertion fails if the supervisor waits after launching
+                # only one or two strategies instead of launching all three first.
+                if len(launched) != 3:
+                    raise AssertionError("a strategy was awaited before all three launched")
+                return 0
+
+        def fake_popen(args, cwd, env):
+            script = args[-1].rsplit("/", 1)[-1]
+            launched.append(script)
+            return FakeProcess(len(launched) + 1000)
 
         try:
             with patch("worker.warm_market_data", return_value={"EUR/USD"}), \
-                 patch("worker.run_strategy", side_effect=fake_run_strategy):
+                 patch("worker.subprocess.Popen", side_effect=fake_popen):
                 worker.run_cycle()
-            self.assertCountEqual(started, ["main.py", "strategy2.py", "strategy3.py"])
+            self.assertCountEqual(
+                launched, ["main.py", "strategy2.py", "strategy3.py"]
+            )
         finally:
             worker.STRATEGIES = original_strategies
+            worker.RUNNING_PROCESSES.clear()
 
     def test_only_markets_with_both_required_timeframes_are_enabled(self):
         original_strategies = worker.STRATEGIES
