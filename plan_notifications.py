@@ -3,7 +3,7 @@
 If SMTP fails, restore the plan checkpoint so the same event can be retried
 on the next scan instead of being silently marked as already notified.
 """
-from email_alerts import send_exit_alert, send_tp1_alert, send_hold_alert
+from email_alerts import send_exit_alert, send_tp1_alert, send_hold_alert, send_profit_goal_alert
 from plan_monitor import monitor_plan
 
 
@@ -27,6 +27,11 @@ def monitor_and_notify(raw5, plan, now, symbol):
                 )
                 tp1_delivered = True
                 plan["tp1_notified"] = True
+            elif event["type"] == "profit_goal":
+                send_profit_goal_alert(
+                    symbol, plan["action"], event["price"],
+                    plan, event["time"]
+                )
             elif event["type"] == "status":
                 send_hold_alert(
                     symbol, plan["action"], event["status"],

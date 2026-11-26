@@ -48,6 +48,10 @@ def main():
                 for event in events:
                     if event["type"] == "tp1":
                         print(f"TP1 price alert sent: {symbol}")
+                    elif event["type"] == "profit_goal":
+                        print(f"Suggested rupee objective price reached: {symbol}")
+                    elif event["type"] == "status":
+                        print(f"{event['status']} reminder sent: {symbol}")
                     else:
                         previous.pop("active_plan", None)
                         previous["last_exit_at"] = event["time"]

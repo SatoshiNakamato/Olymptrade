@@ -73,7 +73,7 @@ class PlanMonitorTests(unittest.TestCase):
         }
         raw = self.bars([(5, 1.100, 1.106, 1.099, 1.105)])
         events = monitor_plan(raw, self.plan, self.now)
-        self.assertEqual([event["type"] for event in events], ["exit"])
+        self.assertEqual([event["type"] for event in events], ["profit_goal"])
         self.assertIn("₹50", events[0]["reason"])
         self.assertAlmostEqual(events[0]["price"], 1.105)
 

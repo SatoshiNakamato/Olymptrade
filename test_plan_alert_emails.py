@@ -3,7 +3,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from email_alerts import send_exit_alert, send_tp1_alert
+from email_alerts import send_exit_alert, send_tp1_alert, send_profit_goal_alert
 
 
 class FakeSMTP:
@@ -67,6 +67,19 @@ class PlanAlertEmailTests(unittest.TestCase):
         self.assertIn("Planned stop loss: 1.09000", body)
         self.assertIn("cannot verify that you entered", body)
         self.assertEqual(message["To"], "recipient@example.test")
+
+    def test_profit_goal_email_says_check_broker_pnl_and_keep_monitoring(self):
+        plan = {
+            "action": "BUY", "price": 1.1000, "stop_loss": 1.0900,
+            "take_profit_1": 1.1100, "take_profit_2": 1.1200,
+            "trade_advice": {"profit_goal_inr": 50, "stake_inr": 100, "multiplier": 50},
+        }
+        send_profit_goal_alert("EUR/USD", "BUY", 1.1050, plan,
+                               "2026-11-25T12:05:00+00:00")
+        body = FakeSMTP.instances[0].messages[0].get_content()
+        self.assertIn("Check your actual Olymptrade P/L", body)
+        self.assertIn("close the full position manually", body)
+        self.assertIn("continue to monitor", body)
 
     def test_exit_email_reports_tp2_reason(self):
         send_exit_alert("XAU/USD", "SELL", "planned TP2 (2R) touched",

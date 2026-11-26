@@ -149,3 +149,30 @@ def send_hold_alert(symbol, action, status, price, plan, event_time):
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
         smtp.send_message(msg)
+
+
+def send_profit_goal_alert(symbol, action, price, plan, event_time):
+    sender = os.environ["GMAIL_SENDER"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
+    recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
+    advice = plan.get("trade_advice", {})
+    msg = EmailMessage()
+    msg["Subject"] = f"PROFIT OBJECTIVE PRICE: {symbol} | verify broker P/L"
+    msg["From"], msg["To"] = sender, recipient
+    msg.set_content(
+        f"PROFIT OBJECTIVE PRICE TOUCHED — {symbol} {action}\n"
+        f"Reference price: {_price(price, symbol)}\n"
+        f"Suggested objective: +₹{advice.get('profit_goal_inr', 'n/a')} gross\n"
+        f"Suggested stake/multiplier: ₹{advice.get('stake_inr', 'n/a')} / {advice.get('multiplier', 'n/a')}x\n"
+        f"TP2: {_price(plan['take_profit_2'], symbol)}\n"
+        f"Stop-loss: {_price(plan['stop_loss'], symbol)}\n"
+        f"Time (UTC): {event_time}\n\n"
+        "ACTION: Check your actual Olymptrade P/L. If your chosen stake and multiplier have "
+        "reached your intended rupee objective, close the full position manually. If not, "
+        "continue to monitor the chart and the existing TP2/stop alerts. This price is based "
+        "on the bot's suggested settings; a different multiplier or stake changes the actual P/L. "
+        "This is not confirmation of broker profit. The bot cannot see, change or close your position."
+    )
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
+        smtp.login(sender, password)
+        smtp.send_message(msg)

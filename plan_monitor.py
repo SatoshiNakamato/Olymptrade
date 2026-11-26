@@ -32,12 +32,11 @@ def monitor_plan(raw5, plan, now):
             if goal_hit:
                 plan["profit_goal_notified"] = True
                 events.append({
-                    "type":"exit",
+                    "type":"profit_goal",
                     "reason":f'suggested +₹{advice.get("profit_goal_inr", 0):.0f} gross objective price touched',
                     "price":goal_price,
                     "time":stamp,
                 })
-                return events
 
         if (high >= tp2 if buy else low <= tp2):
             events.append({"type":"exit","reason":"planned TP2 (2R) touched","price":close,"time":stamp})

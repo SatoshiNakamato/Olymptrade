@@ -248,6 +248,10 @@ def main():
                 for event in events:
                     if event["type"] == "tp1":
                         print("Strategy 2 TP1 price alert sent: " + symbol)
+                    elif event["type"] == "profit_goal":
+                        print("Strategy 2 suggested rupee objective price reached: " + symbol)
+                    elif event["type"] == "status":
+                        print("Strategy 2 " + event["status"] + " reminder sent: " + symbol)
                     else:
                         old.pop("active_plan", None)
                         old["last_exit_at"] = event["time"]
