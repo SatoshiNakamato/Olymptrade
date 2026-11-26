@@ -67,9 +67,11 @@ class WorkerMarketAgentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "send_test_email.py").write_text("# test", encoding="utf-8")
-            with patch.object(worker, "ROOT", root), \\
-                 patch.dict(os.environ, {"SEND_TEST_EMAIL_ON_START": "true"}), \\
-                 patch("worker.subprocess.run") as run:
+            with (
+                patch.object(worker, "ROOT", root),
+                patch.dict(os.environ, {"SEND_TEST_EMAIL_ON_START": "true"}),
+                patch("worker.subprocess.run") as run,
+            ):
                 worker.run_startup_email_test()
             run.assert_called_once()
             self.assertEqual(run.call_args.args[0][-1], str(root / "send_test_email.py"))
