@@ -152,6 +152,33 @@ def launch_all_agents():
     return launched
 
 
+def run_startup_email_test():
+    """Preserve the explicit, opt-in SMTP test without running a market test alert."""
+    requested = os.getenv("SEND_TEST_EMAIL_ON_START", "").strip().lower()
+    if requested not in {"1", "true", "yes"}:
+        return
+    path = ROOT / "send_test_email.py"
+    if not path.is_file():
+        log("STARTUP EMAIL TEST skipped: send_test_email.py is missing.")
+        return
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    log("Explicit startup email test requested.")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-u", str(path)],
+            cwd=str(ROOT),
+            env=env,
+            check=False,
+            timeout=45,
+        )
+        log(f"STARTUP EMAIL TEST exit_code={result.returncode}")
+    except subprocess.TimeoutExpired:
+        log("STARTUP EMAIL TEST timed out after 45 seconds.")
+    except Exception as exc:
+        log(f"STARTUP EMAIL TEST error: {type(exc).__name__}: {exc}")
+
+
 def main():
     global STOP
     signal.signal(signal.SIGTERM, request_stop)
@@ -161,6 +188,7 @@ def main():
     log("Markets: " + ", ".join(MARKETS))
     log("Each market agent runs Strategy 1, Strategy 2 and Strategy 3 concurrently.")
     log("Mode: alert-only; no broker orders are placed.")
+    run_startup_email_test()
     warm_market_data()
 
     next_restart = {symbol: 0.0 for symbol in MARKETS}
