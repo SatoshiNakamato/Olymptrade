@@ -22,6 +22,17 @@ def london_session_status(now_utc):
     return True, "Inside London session"
 
 
+def new_york_session_status(now_utc):
+    """Cash-session filter for US index CFDs; weekdays 09:30–16:00 New York time."""
+    new_york = now_utc.astimezone(ZoneInfo("America/New_York"))
+    if new_york.weekday() >= 5:
+        return False, "Weekend: US cash session is closed"
+    minutes = new_york.hour * 60 + new_york.minute
+    if not (9 * 60 + 30 <= minutes < 16 * 60):
+        return False, "Outside US cash session (09:30–16:00 America/New_York)"
+    return True, "Inside US cash session"
+
+
 def _load_calendar_cache():
     try:
         data = json.loads(CALENDAR_CACHE_PATH.read_text(encoding="utf-8"))
