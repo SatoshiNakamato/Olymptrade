@@ -12,7 +12,7 @@ from market_data import fetch_candles
 ROOT = Path(os.environ.get("VOROA_ROOT", Path(__file__).resolve().parent)).resolve()
 SYMBOL = os.environ.get("VOROA_SYMBOL", "TEST/MARKET")
 STRATEGIES = ("main.py", "strategy2.py", "strategy3.py")
-SCAN_INTERVAL_SECONDS = 20
+SCAN_INTERVAL_SECONDS = 60
 STRATEGY_TIMEOUT_SECONDS = 240
 STOP = False
 CHILDREN = {}
