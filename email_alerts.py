@@ -8,7 +8,7 @@ def _price(value, symbol):
         return f"{value:.5f}"
     if symbol == "USD/JPY":
         return f"{value:.3f}"
-    return f"{value:.2f}" if symbol == "BTC/USD" else f"{value:.3f}"
+    return f"{value:.2f}" if symbol in {"BTC/USD", "US500"} else f"{value:.3f}"
 
 
 def send_alert(signal, test_mode=False):
