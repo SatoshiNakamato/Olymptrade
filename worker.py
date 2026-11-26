@@ -140,6 +140,18 @@ def launch_agent(symbol):
     return process
 
 
+def launch_all_agents():
+    """Launch all eight market agents without waiting for any one to finish."""
+    launched = {}
+    for symbol in MARKETS:
+        if STOP:
+            break
+        process = launch_agent(symbol)
+        if process is not None:
+            launched[symbol] = process
+    return launched
+
+
 def main():
     global STOP
     signal.signal(signal.SIGTERM, request_stop)
@@ -152,13 +164,9 @@ def main():
     warm_market_data()
 
     next_restart = {symbol: 0.0 for symbol in MARKETS}
+    RUNNING_AGENTS.update(launch_all_agents())
     for symbol in MARKETS:
-        if STOP:
-            break
-        process = launch_agent(symbol)
-        if process is not None:
-            RUNNING_AGENTS[symbol] = process
-        else:
+        if symbol not in RUNNING_AGENTS:
             next_restart[symbol] = time.monotonic() + AGENT_RESTART_SECONDS
 
     log(f"MARKET_AGENTS_LAUNCHED count={len(RUNNING_AGENTS)}/{len(MARKETS)}")
