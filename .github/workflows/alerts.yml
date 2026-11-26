@@ -115,6 +115,8 @@ jobs:
           ALERT_TO: Ineed2pnaga@gmail.com
         run: python send_test_email.py
       - name: Scan markets and email confirmed signals
+        id: strategy1_scan
+        continue-on-error: true
         if: ${{ !inputs.run_pipeline_tests_only && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
@@ -123,6 +125,8 @@ jobs:
           SYMBOLS: EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500
         run: python main.py
       - name: Scan markets with Strategy 2 and email confirmed signals
+        id: strategy2_scan
+        continue-on-error: true
         if: ${{ !inputs.run_pipeline_tests_only && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
@@ -131,6 +135,8 @@ jobs:
           SYMBOLS: EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500
         run: python strategy2.py
       - name: Scan eight shared markets with Strategy 3 and email confirmed signals
+        id: strategy3_scan
+        continue-on-error: true
         if: ${{ !inputs.run_pipeline_tests_only && !(github.event_name == 'workflow_dispatch' && inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
@@ -138,6 +144,24 @@ jobs:
           ALERT_TO: Ineed2pnaga@gmail.com
           SYMBOLS: EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500
         run: python strategy3.py
+      - name: Report scanner failures after all strategies have run
+        if: always()
+        env:
+          STRATEGY1_OUTCOME: ${{ steps.strategy1_scan.outcome }}
+          STRATEGY2_OUTCOME: ${{ steps.strategy2_scan.outcome }}
+          STRATEGY3_OUTCOME: ${{ steps.strategy3_scan.outcome }}
+        run: |
+          failed=0
+          for item in "Strategy 1:$STRATEGY1_OUTCOME" "Strategy 2:$STRATEGY2_OUTCOME" "Strategy 3:$STRATEGY3_OUTCOME"; do
+            name="${item%%:*}"
+            outcome="${item#*:}"
+            echo "$name scan outcome: $outcome"
+            if [ "$outcome" = "failure" ]; then failed=1; fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::One or more strategy scanners failed. See the individual scanner logs."
+            exit 1
+          fi
       - name: Save cross-strategy duplicate-alert state
         if: always()
         uses: actions/cache/save@v4
