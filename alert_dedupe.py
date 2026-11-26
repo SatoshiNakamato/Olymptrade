@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-STATE_PATH = Path(".global_alert_state.json")
+STATE_PATH = Path(os.environ.get("GLOBAL_ALERT_STATE_PATH", ".global_alert_state.json")).expanduser()
 COOLDOWN = timedelta(minutes=20)
 
 
