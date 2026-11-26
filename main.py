@@ -84,6 +84,13 @@ def main():
             if signal["action"] == "WAIT":
                 continue
 
+            detected_at = datetime.now(timezone.utc)
+            print(
+                f"[{detected_at.isoformat(timespec='milliseconds')}] "
+                f"Strategy 1 SIGNAL_DETECTED {symbol} {signal['action']} "
+                f"confirmation_candle={signal.get('candle_time')}",
+                flush=True,
+            )
             key = f'{symbol}:{signal["action"]}:{signal["candle_time"]}'
             last_time = previous.get("sent_at")
             cooldown_ok = (not last_time or
@@ -97,7 +104,8 @@ def main():
                 continue
 
             sent = send_if_not_duplicate(
-                symbol, signal["action"], now, lambda: send_alert(signal)
+                symbol, signal["action"], now, lambda: send_alert(signal),
+                strategy="Strategy 1",
             )
             if not sent:
                 print(f"Cross-strategy duplicate suppressed at send lock: {symbol}")
