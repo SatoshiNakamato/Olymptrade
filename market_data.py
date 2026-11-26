@@ -15,7 +15,7 @@ import pandas as pd
 import requests
 
 BASE_URL = "https://biquote.io"
-CACHE_TTL_SECONDS = 20
+CACHE_TTL_SECONDS = 20  # Keep scans fresh; the worker prewarms this cache each cycle.
 DEFAULT_OUTPUTSIZE = 1600
 CACHE_DIR = Path(tempfile.gettempdir()) / "olymptrade-market-cache"
 SYMBOL_MAP = {
@@ -82,11 +82,11 @@ def _download_candles(symbol: str, interval: str) -> pd.DataFrame:
                 url,
                 params={"interval": api_interval, "limit": limit},
                 headers={"Accept": "application/json", "User-Agent": "OlymptradeMarketAlerts/1.0"},
-                timeout=20,
+                timeout=8,
             )
             if response.status_code == 429 or response.status_code >= 500:
                 retry_after = response.headers.get("Retry-After")
-                delay = min(30, int(retry_after)) if retry_after and retry_after.isdigit() else 2 ** attempt
+                delay = min(2, int(retry_after)) if retry_after and retry_after.isdigit() else 2 ** attempt
                 last_error = f"Biquote HTTP {response.status_code}"
                 if attempt < 2:
                     time.sleep(delay)
