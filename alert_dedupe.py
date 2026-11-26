@@ -1,5 +1,6 @@
 """Cross-strategy email deduplication for concurrent scanner workers."""
 import fcntl
+import hashlib
 import json
 import os
 import tempfile
@@ -13,9 +14,7 @@ COOLDOWN = timedelta(minutes=20)
 
 
 @contextmanager
-def _state_lock():
-    """Serialize the duplicate-check -> email-send -> state-write transaction."""
-    lock_path = STATE_PATH.with_name(STATE_PATH.name + ".lock")
+def _file_lock(lock_path):
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
@@ -23,6 +22,19 @@ def _state_lock():
             yield
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _state_lock():
+    """Serialize shared-state reads and atomic writes, never SMTP delivery."""
+    yield from _file_lock(STATE_PATH.with_name(STATE_PATH.name + ".lock"))
+
+
+@contextmanager
+def _alert_lock(symbol, action):
+    """Serialize only identical symbol/direction alerts across processes."""
+    key = hashlib.sha256(f"{symbol}|{action}".encode("utf-8")).hexdigest()
+    yield from _file_lock(STATE_PATH.with_name(f"{STATE_PATH.name}.{key}.lock"))
 
 
 def _read_state():
@@ -70,15 +82,22 @@ def record_sent(symbol, action, now):
 
 
 def send_if_not_duplicate(symbol, action, now, send, strategy=""):
-    """Send once across concurrent workers; record only after successful SMTP send.
+    """Send identical alerts once; allow unrelated symbol/direction emails in parallel.
 
-    Returns True when this call sent the alert, False when a duplicate was
-    suppressed. SMTP errors propagate and leave the alert eligible for retry.
+    The per-alert lock prevents duplicate sends. The short global state lock is
+    held only for checking/updating JSON, not while SMTP connects or sends.
     """
-    with _state_lock():
-        if is_duplicate(symbol, action, now):
-            print(f"{strategy or 'Scanner'} duplicate suppressed at shared send lock: {symbol} {action}", flush=True)
-            return False
+    with _alert_lock(symbol, action):
+        check_time = datetime.now(timezone.utc)
+        with _state_lock():
+            if is_duplicate(symbol, action, check_time):
+                print(
+                    f"{strategy or 'Scanner'} duplicate suppressed at shared send lock: "
+                    f"{symbol} {action}",
+                    flush=True,
+                )
+                return False
+
         label = f"{strategy} " if strategy else ""
         started_at = datetime.now(timezone.utc)
         started = time.monotonic()
@@ -88,9 +107,11 @@ def send_if_not_duplicate(symbol, action, now, send, strategy=""):
             flush=True,
         )
         send()
+
         sent_at = datetime.now(timezone.utc)
         elapsed = time.monotonic() - started
-        record_sent(symbol, action, now)
+        with _state_lock():
+            record_sent(symbol, action, sent_at)
         print(
             f"[{sent_at.isoformat(timespec='milliseconds')}] "
             f"{label}ALERT_SEND_SUCCESS {symbol} {action} "
