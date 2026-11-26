@@ -21,7 +21,7 @@ def _save_state(state):
     temp_name = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=".",
+            mode="w", encoding="utf-8", dir=os.path.dirname(os.path.abspath(STATE_PATH)),
             prefix=".strategy2_state.", suffix=".tmp", delete=False
         ) as handle:
             json.dump(state, handle, indent=2)
