@@ -14,8 +14,6 @@ on:
         required: false
         type: boolean
         default: false
-  schedule:
-    - cron: "*/5 * * * *"
 permissions:
   contents: read
 concurrency:
@@ -90,7 +88,7 @@ jobs:
       - name: Test end-to-end BUY/SELL, TP1 and TP2 email pipeline
         run: python -m unittest -v test_alert_pipeline_e2e.py
       - name: Validate Gmail configuration
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
