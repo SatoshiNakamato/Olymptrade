@@ -11,7 +11,7 @@ from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent
 
 STATE_PATH = ".strategy2_state.json"
-SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
+SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
 
 
 def _closed(raw, minutes, now):
@@ -197,7 +197,7 @@ def _send_email(signal):
     password = os.environ["GMAIL_APP_PASSWORD"]
     recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
     symbol = signal["symbol"]
-    digits = 5 if symbol == "EUR/USD" else 2
+    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol == "BTC/USD" else 3
     fmt = lambda x: f"{float(x):.{digits}f}"
     msg = EmailMessage()
     msg["Subject"] = f'{signal["action"]}: {symbol} | Strategy 2 confirmed'
@@ -267,7 +267,7 @@ def main():
             if not is_crypto and not in_session:
                 print(f"Strategy 2 {symbol}: WAIT — {why}")
                 continue
-            if symbol == "XAU/USD":
+            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD"}:
                 ok, news_reason = usd_high_impact_news_status(now)
                 if not ok:
                     print(f"Strategy 2 {symbol}: WAIT — {news_reason}")
