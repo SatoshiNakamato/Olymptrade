@@ -6,6 +6,9 @@ import market_agent
 
 
 class MarketAgentTests(unittest.TestCase):
+    def test_scan_interval_is_one_minute(self):
+        self.assertEqual(market_agent.SCAN_INTERVAL_SECONDS, 60)
+
     def test_all_three_strategy_processes_launch_before_waiting(self):
         original_children = dict(market_agent.CHILDREN)
         market_agent.CHILDREN.clear()
