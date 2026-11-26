@@ -73,6 +73,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
+      - name: Test worker market-data prefetch
+        run: python -m unittest -v test_worker.py
       - name: Test pandas-free trade sizing suggestions
         run: python -m unittest -v test_trade_advisor.py
       - name: Test cross-strategy alert deduplication
@@ -119,7 +121,7 @@ jobs:
       - name: Scan markets and email confirmed signals
         id: strategy1_scan
         continue-on-error: true
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -129,7 +131,7 @@ jobs:
       - name: Scan markets with Strategy 2 and email confirmed signals
         id: strategy2_scan
         continue-on-error: true
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -139,7 +141,7 @@ jobs:
       - name: Scan eight shared markets with Strategy 3 and email confirmed signals
         id: strategy3_scan
         continue-on-error: true
-        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
         env:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
