@@ -73,6 +73,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
+      - name: Test pandas-free trade sizing suggestions
+        run: python -m unittest -v test_trade_advisor.py
       - name: Test cross-strategy alert deduplication
         run: python -m unittest -v test_alert_dedupe.py
       - name: Test email formatting and mocked SMTP delivery

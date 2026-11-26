@@ -9,6 +9,7 @@ from market_filters import london_session_status, new_york_session_status, usd_h
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent
+from trade_advisor import recommend_trade, format_trade_advice
 
 STATE_PATH = ".strategy2_state.json"
 SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500").split(",") if s.strip()]
@@ -180,7 +181,6 @@ def evaluate_strategy2(symbol, raw5, raw1, now):
         "entry": entry, "entry_zone_low": min(entry_low, entry_high), "entry_zone_high": max(entry_low, entry_high),
         "valid_until": valid_until, "take_profit_1": target1, "stop_loss": stop, "take_profit": target,
         "risk_distance": risk, "risk_reward": 2.0,
-        "estimated_profit_inr_proxy": round((75 * 50) * (abs(target-entry) / entry), 2) if entry else 0.0,
         "confirmation_timeframe": confirmation_tf,
         "confirmation_level": confirm["level"],
         "confirmation_time": confirm["confirmation_time"],
@@ -197,6 +197,8 @@ def _send_email(signal):
     password = os.environ["GMAIL_APP_PASSWORD"]
     recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
     symbol = signal["symbol"]
+    advice = recommend_trade(signal)
+    signal["trade_advice"] = advice
     digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol in {"BTC/USD", "US500"} else 3
     fmt = lambda x: f"{float(x):.{digits}f}"
     msg = EmailMessage()
@@ -216,13 +218,11 @@ def _send_email(signal):
         f'Take-profit (2R): {fmt(signal["take_profit"])}\n'
         f'Risk/reward: 1:2\n'
         f'Estimated review window: {signal["hold_hours"]} hours (not a guaranteed holding time)\n'
-        f'Estimated gross profit: about ₹{signal["estimated_profit_inr_proxy"]:.2f} (₹75 margin × 50x exposure proxy; before costs)\n'
         f'Confirmed candle time: {signal["candle_time"]} UTC\n\n'
         f'Reason: {signal["reason"]}\n\n'
-        'Risk rules: keep risk at or below 1% of account equity; stop for the day at the chosen daily loss limit, profit limit, or maximum trade count. '
-        'The profit figure is only a rough notional proxy; broker contract size, currency conversion, spread and fees can change the actual result. '
-        'The bot cannot see your broker balance or enforce account-level limits. Verify the live quote and spread before entering. '
-        'This is an alert only; it does not place or close broker orders.'
+        + format_trade_advice(advice, fmt) + '\n\n'
+        'These are optional estimates, not guaranteed broker P/L. Verify the live quote, spread and entry validity. '
+        'The bot cannot see your fill, actual multiplier, open position or realized P/L. It never places or closes orders.'
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
@@ -295,7 +295,8 @@ def main():
                       "stop_loss": signal["stop_loss"], "take_profit_1": signal["take_profit_1"],
                       "take_profit_2": signal["take_profit"], "candle_time": signal["candle_time"],
                       "created_at": now.isoformat(), "hold_hours": signal["hold_hours"],
-                      "last_checked_candle": signal["candle_time"]}
+                      "last_checked_candle": signal["candle_time"],
+                      "trade_advice": signal.get("trade_advice")}
             state[symbol] = {"key": key, "sent_at": now.isoformat(),
                              "action": signal["action"], "active_plan": active}
             print(f'Strategy 2 email sent: {signal["action"]} {symbol}')

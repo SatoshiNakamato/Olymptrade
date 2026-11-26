@@ -35,9 +35,13 @@ See [`PRECIOUS_METALS_STRATEGY.md`](PRECIOUS_METALS_STRATEGY.md) for the separat
 - The calendar filter fails closed: if the calendar cannot be retrieved or parsed, the relevant entry alerts are skipped.
 - The calendar feed is a third-party source; verify major event times against a trusted economic calendar.
 
-## Risk rules and limitations
+## Position suggestions and monitoring
 
-Emails are alerts, not trade instructions or guarantees. The bot does not place, monitor, or close broker orders. It cannot see your account balance, fills, spread, open positions, or realized P/L. Risk sizing and daily loss limits must be enforced manually. Use a demo account for forward testing and verify each quote, spread, entry window, stop, and target.
+Each confirmed BUY/SELL alert includes a rule-based quality score, suggested INR investment and multiplier, a gross rupee profit objective, and approximate gross P/L at TP1, TP2 and the stop. Current suggestions use ₹100/₹200 stakes; non-US500 instruments use 30x/50x/100x tiers, while US500 uses 10x/15x/20x. These are suggestions only: choose any multiplier and stake actually available to you. The score is not a win probability and does not change whether a strategy signal is sent.
+
+Rupee calculations are estimates based on percentage price movement and exclude Olymptrade commission, spread, currency conversion and execution differences. If you choose a different stake or multiplier, the rupee estimates and target price change. At the rupee objective or strategy TP2, whichever comes first, check actual broker P/L and close the full position manually if appropriate. TP1, hourly HOLD/MONITOR reminders, stop/TP2 exit alerts and review-window alerts monitor theoretical chart levels only.
+
+The bot does not connect to Olymptrade, cannot see your actual fills, selected multiplier, open positions or realized P/L, and cannot place, change or close orders. It never blocks a valid strategy signal because of the optional sizing suggestion. Use a demo account for forward testing and verify every quote, spread, entry window, stop and target.
 
 Holding/review windows are estimates based on ATR and target distance, not guaranteed durations. GitHub Actions runs every 5 minutes on a best-effort schedule; it is not real-time and can miss intrabar setups. No strategy promises a fixed number of signals per day; strict filters may correctly produce no alert on some days.
 

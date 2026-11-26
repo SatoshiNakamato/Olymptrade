@@ -30,7 +30,23 @@ def monitor_plan(raw5, plan, now):
         plan["last_checked_candle"] = stamp
     created = pd.Timestamp(plan.get("created_at", plan["candle_time"]))
     if created.tzinfo is None: created = created.tz_localize("UTC")
-    if pd.Timestamp(now) >= created + pd.Timedelta(hours=int(plan.get("hold_hours",5))):
+    current_time = pd.Timestamp(now)
+    if current_time.tzinfo is None:
+        current_time = current_time.tz_localize("UTC")
+    if current_time >= created + pd.Timedelta(hours=int(plan.get("hold_hours",5))):
         last = float(closed.close.iloc[-1]) if not closed.empty else float(plan["price"])
-        events.append({"type":"exit","reason":str(plan.get("hold_hours",5))+"-hour review window reached","price":last,"time":pd.Timestamp(now).isoformat()})
+        events.append({"type":"exit","reason":str(plan.get("hold_hours",5))+"-hour review window reached","price":last,"time":current_time.isoformat()})
+        return events
+
+    last_status = pd.Timestamp(plan.get("last_status_alert_at", plan.get("created_at", plan["candle_time"])))
+    if last_status.tzinfo is None:
+        last_status = last_status.tz_localize("UTC")
+    if current_time - last_status >= pd.Timedelta(hours=1):
+        last = float(closed.close.iloc[-1]) if not closed.empty else float(plan["price"])
+        entry = float(plan["price"])
+        risk = abs(entry - float(plan["stop_loss"]))
+        adverse = (entry - last) if buy else (last - entry)
+        status = "MONITOR" if risk > 0 and adverse >= 0.5 * risk else "HOLD"
+        plan["last_status_alert_at"] = current_time.isoformat()
+        events.append({"type":"status","status":status,"price":last,"time":current_time.isoformat()})
     return events

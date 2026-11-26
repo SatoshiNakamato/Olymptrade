@@ -15,6 +15,7 @@ from market_filters import london_session_status, new_york_session_status, usd_h
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent
+from trade_advisor import recommend_trade, format_trade_advice
 
 STATE_PATH = ".strategy3_state.json"
 
@@ -168,6 +169,8 @@ def _send_email(signal):
     password = os.environ["GMAIL_APP_PASSWORD"]
     recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
     symbol = signal["symbol"]
+    advice = recommend_trade(signal)
+    signal["trade_advice"] = advice
     fmt = lambda x: _fmt(symbol, x)
     msg = EmailMessage()
     msg["Subject"] = f'{signal["action"]}: {symbol} | Strategy 3 confirmed'
@@ -188,10 +191,10 @@ def _send_email(signal):
         f'Confirmed candle (UTC): {signal["candle_time"]}\n'
         f'Entry validity ends (UTC): {signal["valid_until"]}\n\n'
         f'Reason: {signal["reason"]}\n\n'
-        'This is an alert, not a guaranteed trade. Verify broker quote, spread, '
-        'entry validity, and position size before acting. Do not enter after the '
-        'validity time or outside the stated candle range. The bot monitors theoretical price levels '
-        'for TP1/stop/TP2 notifications only; it never places, changes, or closes orders. Forward-test on demo first.'
+        + format_trade_advice(advice, fmt) + '\n\n'
+        'This is an alert, not a guaranteed trade. Verify broker quote, spread and entry validity. '
+        'The bot cannot see your fill, actual multiplier, open position or realized P/L. '
+        'It monitors theoretical chart levels only and never places, changes or closes orders.'
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
@@ -276,7 +279,8 @@ def main():
                       "stop_loss": signal["stop_loss"], "take_profit_1": signal["take_profit_1"],
                       "take_profit_2": signal["take_profit_2"], "candle_time": signal["candle_time"],
                       "created_at": now.isoformat(), "hold_hours": signal["hold_hours"],
-                      "last_checked_candle": signal["candle_time"]}
+                      "last_checked_candle": signal["candle_time"],
+                      "trade_advice": signal.get("trade_advice")}
             state[symbol] = {"key": key, "sent_at": now.isoformat(),
                              "action": signal["action"], "active_plan": active}
             _save_state(state)

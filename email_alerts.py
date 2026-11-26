@@ -2,6 +2,8 @@ import os
 import smtplib
 from email.message import EmailMessage
 
+from trade_advisor import recommend_trade, format_trade_advice
+
 
 def _price(value, symbol):
     if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"}:
@@ -16,6 +18,8 @@ def send_alert(signal, test_mode=False):
     password = os.environ["GMAIL_APP_PASSWORD"]
     recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
     symbol, action = signal["symbol"], signal["action"]
+    advice = recommend_trade(signal)
+    signal["trade_advice"] = advice
     low = signal.get("entry_zone_low", signal["price"])
     high = signal.get("entry_zone_high", signal["price"])
     msg = EmailMessage()
@@ -41,15 +45,12 @@ def send_alert(signal, test_mode=False):
         f'Market shift: {signal["market_shift"]}\n'
         f'Confirmed 5m candle (UTC): {signal["candle_time"]}\n'
         f'Valid until: {signal["valid_until"]}\n\n'
-        f'Reason: {signal["reason"]}\n'
+        f'Reason: {signal["reason"]}\n\n'
         + ('' if signal.get("trend_aligned", False) else 'CAUTION: Internal direction is counter to the 1h swing trend; this is a smaller countertrend move, not a higher-timeframe trend-following setup.\n')
-        + '\n'
-        'RISK RULES: risk only 0.5–1% of account equity per trade, with size calculated from the actual stop distance. '
-        'Stop for the day after a 2% loss, 5% profit, or 3 trades. These daily limits are reminders only: '
-        'this alert-only bot cannot see your account balance, filled orders, or realized P/L and cannot enforce them. '
-        'Do not enter if the quote has moved outside the entry zone, the signal expired, the spread is abnormal, '
-        'or a major USD news blackout is active. No setup is guaranteed. The bot does not place or manage orders.'
-    )
+        + '\n' + format_trade_advice(advice, lambda value: _price(value, symbol)) + '\n\n'
+        'Check the live Olymptrade quote, spread and signal expiry before entering. '
+        'This bot cannot see your actual fill, selected multiplier, open position or realized P/L. '
+        'It never places or closes orders.    )
 
     if test_mode:
         msg.replace_header("Subject", f"TEST ONLY — alert pipeline check | {symbol}")
@@ -80,12 +81,11 @@ def send_tp1_alert(symbol, action, price, plan, event_time):
         f"Stop-loss reference: {_price(plan['stop_loss'], symbol)}\n"
         f"TP2 reference: {_price(plan['take_profit_2'], symbol)}\n"
         f"Completed 5m candle (UTC): {event_time}\n\n"
-        "RECOMMENDATION: If you entered and the live broker quote confirms TP1, consider "
-        "securing a partial profit manually. For any remaining position, review whether moving "
-        "the stop toward breakeven is appropriate for your execution costs and market conditions. "
-        "Do not assume TP1 guarantees TP2. "
-        "The bot cannot verify your entry, filled quantity, or realized profit and cannot change "
-        "stops, take partial profit, or close orders. If you did not enter, ignore this alert."
+        "RECOMMENDATION: If you entered, check your actual Olymptrade P/L against the rupee objective "
+        "in the original alert. If your objective is reached, close the full position manually. "
+        "Otherwise, HOLD only if your chart thesis remains valid; monitor the stop and TP2. "
+        "TP1 does not guarantee TP2. The bot cannot verify your fill, chosen multiplier or P/L, "
+        "and cannot change or close orders. If you did not enter, ignore this alert."
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
@@ -107,8 +107,42 @@ def send_exit_alert(symbol, action, reason, price, plan):
         f"Planned entry reference: {_price(plan['price'], symbol)}\n"
         f"Planned stop loss: {_price(plan['stop_loss'], symbol)}\n"
         f"Planned take profit: {_price(plan['take_profit_2'], symbol)}\n\n"
-        "This monitors the theoretical alert plan only. It cannot verify that you entered, "
-        "or close a position on Olymptrade. Check your actual open position and broker quote."
+        "CLOSE MANUALLY if your position is still open and this exit condition applies. "
+        "This monitors theoretical chart levels only; it cannot verify your fill or close "
+        "a position on Olymptrade. Check the actual broker quote and P/L."
+    )
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
+        smtp.login(sender, password)
+        smtp.send_message(msg)
+
+
+
+def send_hold_alert(symbol, action, status, price, plan, event_time):
+    sender = os.environ["GMAIL_SENDER"]
+    password = os.environ["GMAIL_APP_PASSWORD"]
+    recipient = os.environ.get("ALERT_TO", "Ineed2pnaga@gmail.com")
+    advice = plan.get("trade_advice", {})
+    msg = EmailMessage()
+    msg["Subject"] = f"{status}: {symbol} | {action} plan review"
+    msg["From"], msg["To"] = sender, recipient
+    msg.set_content(
+        f"{status} / CHART REVIEW — {symbol} {action}\n"
+        f"Latest closed 5m price: {_price(price, symbol)}\n"
+        f"Entry reference: {_price(plan['price'], symbol)}\n"
+        f"Stop-loss: {_price(plan['stop_loss'], symbol)}\n"
+        f"TP1: {_price(plan['take_profit_1'], symbol)}\n"
+        f"TP2: {_price(plan['take_profit_2'], symbol)}\n"
+        f"Review time (UTC): {event_time}\n"
+        + (f"Suggested objective: +₹{advice.get('profit_goal_inr')} "
+           f"using suggested ₹{advice.get('stake_inr')} / {advice.get('multiplier')}x settings.\n"
+           if advice else "")
+        + ("MONITOR: price has moved materially against the planned direction. Recheck the live "
+           "chart and be ready to close manually if the setup is weakening.\n"
+           if status == "MONITOR" else
+           "HOLD REVIEW: price has not reached the planned exit levels. Continue only while "
+           "your own chart review confirms the setup remains valid.\n")
+        + "This is a theoretical plan reminder, not a view of your actual position or broker P/L. "
+        "The bot cannot verify entry, change stops, or close orders. If you did not enter, ignore it."
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)
