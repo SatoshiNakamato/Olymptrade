@@ -249,10 +249,13 @@ def main():
             if not in_session:
                 print(f"Strategy 3 {symbol}: WAIT — {reason}")
                 continue
-            news_ok, news_reason = usd_high_impact_news_status(now)
-            if not news_ok:
-                print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
-                continue
+            # Match Strategies 1 and 2: USD calendar blocks FX, metals and US500 entries,
+            # but does not block BTC/USD, which trades 24/7 and is not a USD event session.
+            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}:
+                news_ok, news_reason = usd_high_impact_news_status(now)
+                if not news_ok:
+                    print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
+                    continue
             signal = evaluate_strategy3(raw5, now, symbol, raw1h=raw1h)
         except Exception as exc:
             scan_errors.append(f"{symbol}: {type(exc).__name__}: {exc}")
