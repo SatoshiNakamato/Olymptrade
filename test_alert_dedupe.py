@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -42,6 +43,25 @@ class AlertDedupeTests(unittest.TestCase):
         self.assertFalse(alert_dedupe.is_duplicate(
             "XAU/USD", "BUY", self.now + timedelta(minutes=1)
         ))
+
+
+    def test_concurrent_workers_send_only_one_same_direction_alert(self):
+        sent = []
+
+        def fake_send():
+            sent.append("sent")
+
+        def attempt(_):
+            return alert_dedupe.send_if_not_duplicate(
+                "EUR/USD", "BUY", self.now, fake_send
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(attempt, range(2)))
+
+        self.assertEqual(sorted(results), [False, True])
+        self.assertEqual(sent, ["sent"])
+        self.assertTrue(alert_dedupe.is_duplicate("EUR/USD", "BUY", self.now))
 
 
     def test_concurrent_workers_send_only_one_same_direction_alert(self):
