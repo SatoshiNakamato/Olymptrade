@@ -50,7 +50,9 @@ def send_alert(signal, test_mode=False):
         + '\n' + format_trade_advice(advice, lambda value: _price(value, symbol)) + '\n\n'
         'Check the live Olymptrade quote, spread and signal expiry before entering. '
         'This bot cannot see your actual fill, selected multiplier, open position or realized P/L. '
-        'It never places or closes orders.    )
+        'RISK RULES: the suggested stake and multiplier are optional; no risk limit blocks a valid strategy alert. '
+        'The bot does not place or manage orders. It never places or closes orders.'
+    )
 
     if test_mode:
         msg.replace_header("Subject", f"TEST ONLY — alert pipeline check | {symbol}")
@@ -85,7 +87,7 @@ def send_tp1_alert(symbol, action, price, plan, event_time):
         "in the original alert. If your objective is reached, close the full position manually. "
         "Otherwise, HOLD only if your chart thesis remains valid; monitor the stop and TP2. "
         "TP1 does not guarantee TP2. The bot cannot verify your fill, chosen multiplier or P/L, "
-        "and cannot change or close orders. If you did not enter, ignore this alert."
+        "and cannot change stops, take partial profit, or close orders. If you did not enter, ignore this alert."
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
         smtp.login(sender, password)

@@ -100,6 +100,8 @@ class EmailAlertTests(unittest.TestCase):
         for expected in ("Entry reference:", "Stop-loss:", "TP1 (1R):",
                          "TP2 / opposing liquidity:", "Risk-to-reward:",
                          "Suggested review/holding window:", "RISK RULES:",
+                         "Suggested investment:", "Suggested multiplier:",
+                         "Suggested gross profit objective:",
                          "The bot does not place or manage orders."):
             self.assertIn(expected, body)
 

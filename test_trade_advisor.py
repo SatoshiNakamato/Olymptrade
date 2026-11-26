@@ -11,6 +11,9 @@ class TradeAdvisorTests(unittest.TestCase):
             "take_profit_1": 102.0, "take_profit_2": 104.0,
             "take_profit": 104.0, "risk_reward": 2.0,
         }
+        if action == "SELL":
+            base.update({"stop_loss": 102.0, "take_profit_1": 98.0,
+                         "take_profit_2": 96.0, "take_profit": 96.0})
         if strategy == "s1":
             base.update({"liquidity_sweep": "confirmed", "market_shift": "confirmed",
                          "zone_15m": {"low": 99, "high": 100}})
