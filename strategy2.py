@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -13,6 +14,24 @@ from trade_advisor import recommend_trade, format_trade_advice
 
 STATE_PATH = ".strategy2_state.json"
 SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500").split(",") if s.strip()]
+
+
+def _save_state(state):
+    """Atomically persist strategy state to survive abrupt worker restarts."""
+    temp_name = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=".",
+            prefix=".strategy2_state.", suffix=".tmp", delete=False
+        ) as handle:
+            json.dump(state, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temp_name = handle.name
+        os.replace(temp_name, STATE_PATH)
+    finally:
+        if temp_name and os.path.exists(temp_name):
+            os.unlink(temp_name)
 
 
 def _closed(raw, minutes, now):
@@ -240,10 +259,11 @@ def main():
     errors = []
     for symbol in SYMBOLS:
         try:
-            raw5 = fetch_candles(symbol, interval="5min")
             old = state.get(symbol, {})
             active = old.get("active_plan")
             if active:
+                # Active plans must keep being monitored even outside entry sessions/news windows.
+                raw5 = fetch_candles(symbol, interval="5min")
                 events = monitor_and_notify(raw5, active, now, symbol)
                 for event in events:
                     if event["type"] == "tp1":
@@ -260,13 +280,9 @@ def main():
                     old["active_plan"] = active
                 state[symbol] = old
                 continue
-            raw1 = None
-            # The 1m fallback is only requested when needed; fetch after 5m evaluation.
-            signal = evaluate_strategy2(symbol, raw5, None, now)
-            if signal["action"] == "WAIT" and ("market-structure shift" in signal.get("reason", "") or "1m fallback" in signal.get("reason", "")):
-                raw1 = fetch_candles(symbol, interval="1min")
-                signal = evaluate_strategy2(symbol, raw5, raw1, now)
-            # FX and gold follow the London-session filter; crypto trades 24/7.
+
+            # Apply entry gates before downloading candles or running pandas analysis.
+            # FX/metals follow London hours; US500 follows New York hours; crypto is 24/7.
             is_crypto = symbol.upper().startswith(("BTC/", "ETH/"))
             if symbol == "US500":
                 market_open, market_reason = new_york_session_status(now)
@@ -280,6 +296,16 @@ def main():
                 if not ok:
                     print(f"Strategy 2 {symbol}: WAIT — {news_reason}")
                     continue
+
+            raw5 = fetch_candles(symbol, interval="5min")
+            # Request 1m candles only when the 5m structure specifically needs fallback.
+            signal = evaluate_strategy2(symbol, raw5, None, now)
+            if signal["action"] == "WAIT" and (
+                "market-structure shift" in signal.get("reason", "")
+                or "1m fallback" in signal.get("reason", "")
+            ):
+                raw1 = fetch_candles(symbol, interval="1min")
+                signal = evaluate_strategy2(symbol, raw5, raw1, now)
             print(json.dumps(signal, default=str))
             if signal["action"] == "WAIT":
                 continue
@@ -320,8 +346,7 @@ def main():
         except Exception as exc:
             errors.append(f"{symbol}: {exc}")
             print(f"Strategy 2 ERROR {symbol}: {exc}")
-    with open(STATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
+    _save_state(state)
     if errors:
         raise RuntimeError("Strategy 2 scan failures: " + " | ".join(errors))
 
