@@ -263,6 +263,13 @@ def main():
         if signal["action"] == "WAIT":
             continue
 
+        detected_at = datetime.now(timezone.utc)
+        print(
+            f"[{detected_at.isoformat(timespec='milliseconds')}] "
+            f"Strategy 3 SIGNAL_DETECTED {symbol} {signal['action']} "
+            f"confirmation_candle={signal.get('candle_time')}",
+            flush=True,
+        )
         key = f'{symbol}:{signal["action"]}:{signal["candle_time"]}'
         old = state.get(symbol, {})
         last_sent = old.get("sent_at")
@@ -278,7 +285,8 @@ def main():
 
         try:
             sent = send_if_not_duplicate(
-                symbol, signal["action"], now, lambda: _send_email(signal)
+                symbol, signal["action"], now, lambda: _send_email(signal),
+                strategy="Strategy 3",
             )
             if not sent:
                 print(f"Strategy 3 duplicate suppressed at send lock: {symbol}")
