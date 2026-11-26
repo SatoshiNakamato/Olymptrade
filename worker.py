@@ -1,6 +1,8 @@
 """Voroa supervisor: one isolated, persistent agent per market.
 
-Each market agent runs all three existing strategy evaluators independently.
+Each market agent evaluates all three original strategies in sequence. The eight
+markets still run concurrently, but only one strategy subprocess per market is
+allowed at a time to keep peak memory bounded on small background-worker plans.
 Strategy rules remain in main.py, strategy2.py, strategy3.py and signals.py.
 This service sends alerts only; it never places broker orders.
 """
@@ -10,11 +12,8 @@ import signal
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-
-from market_data import fetch_candles
 
 ROOT = Path(__file__).resolve().parent
 AGENT_DIR = ROOT / ".voroa_agents"
@@ -23,9 +22,8 @@ MARKETS = (
     "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
     "XAU/USD", "XAG/USD", "BTC/USD", "US500",
 )
-DATA_INTERVALS = ("5min", "1hour")
-REQUIRED_INTERVALS = ("5min", "1hour")
 AGENT_RESTART_SECONDS = 5
+HEARTBEAT_SECONDS = 60
 STOP = False
 RUNNING_AGENTS = {}
 STATE_FILES = (
@@ -88,33 +86,6 @@ def request_stop(signum, frame):
                 process.terminate()
         except (OSError, ProcessLookupError):
             pass
-
-
-def warm_market_data():
-    jobs = [(symbol, interval) for symbol in MARKETS for interval in DATA_INTERVALS]
-    succeeded = set()
-    started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        pending = {
-            pool.submit(fetch_candles, symbol, interval=interval): (symbol, interval)
-            for symbol, interval in jobs
-        }
-        for future in as_completed(pending):
-            symbol, interval = pending[future]
-            try:
-                future.result()
-                succeeded.add((symbol, interval))
-            except Exception as exc:
-                log(f"DATA_PREFETCH_ERROR {symbol} {interval}: {type(exc).__name__}: {exc}")
-    ready = {
-        symbol for symbol in MARKETS
-        if all((symbol, interval) in succeeded for interval in REQUIRED_INTERVALS)
-    }
-    log(
-        f"DATA_PREFETCH {len(succeeded)}/{len(jobs)} datasets ready; "
-        f"{len(ready)}/{len(MARKETS)} markets warm. All agents will start regardless."
-    )
-    return ready
 
 
 def launch_agent(symbol):
@@ -184,12 +155,12 @@ def main():
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
 
-    log("VOROA_WORKER_MODE=eight_independent_market_agents_v1")
+    log("VOROA_WORKER_MODE=eight_independent_market_agents_memory_bounded_v2")
     log("Markets: " + ", ".join(MARKETS))
-    log("Each market agent runs Strategy 1, Strategy 2 and Strategy 3 concurrently.")
+    log("Each market runs Strategy 1, Strategy 2 and Strategy 3 sequentially.")
+    log("All eight markets run concurrently; maximum strategy subprocesses=8.")
     log("Mode: alert-only; no broker orders are placed.")
     run_startup_email_test()
-    warm_market_data()
 
     next_restart = {symbol: 0.0 for symbol in MARKETS}
     RUNNING_AGENTS.update(launch_all_agents())
@@ -198,6 +169,7 @@ def main():
             next_restart[symbol] = time.monotonic() + AGENT_RESTART_SECONDS
 
     log(f"MARKET_AGENTS_LAUNCHED count={len(RUNNING_AGENTS)}/{len(MARKETS)}")
+    next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
     while not STOP:
         now = time.monotonic()
         for symbol in MARKETS:
@@ -215,6 +187,11 @@ def main():
                     RUNNING_AGENTS[symbol] = restarted
                 else:
                     next_restart[symbol] = time.monotonic() + AGENT_RESTART_SECONDS
+
+        if now >= next_heartbeat:
+            active = sum(1 for process in RUNNING_AGENTS.values() if process.poll() is None)
+            log(f"SUPERVISOR_HEARTBEAT agents_running={active}/{len(MARKETS)}")
+            next_heartbeat = now + HEARTBEAT_SECONDS
         time.sleep(1)
 
     for symbol, process in list(RUNNING_AGENTS.items()):
