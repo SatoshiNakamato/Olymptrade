@@ -63,7 +63,10 @@ class PlanNotificationTests(unittest.TestCase):
     @patch("plan_notifications.send_hold_alert")
     def test_hourly_hold_reminder_is_sent_and_checkpointed(self, send_hold):
         later = datetime(2026, 11, 25, 13, 20, tzinfo=timezone.utc)
-        events = monitor_and_notify(self.raw, self.plan, later, "EUR/USD")
+        quiet = self.raw.copy()
+        quiet.loc[0, "high"] = 1.105
+        quiet.loc[0, "close"] = 1.103
+        events = monitor_and_notify(quiet, self.plan, later, "EUR/USD")
         self.assertEqual([event["type"] for event in events], ["status"])
         self.assertEqual(events[0]["status"], "HOLD")
         send_hold.assert_called_once()
@@ -73,7 +76,10 @@ class PlanNotificationTests(unittest.TestCase):
     def test_failed_hold_reminder_can_retry(self, send_hold):
         later = datetime(2026, 11, 25, 13, 20, tzinfo=timezone.utc)
         with self.assertRaisesRegex(RuntimeError, "SMTP unavailable"):
-            monitor_and_notify(self.raw, self.plan, later, "EUR/USD")
+            quiet = self.raw.copy()
+            quiet.loc[0, "high"] = 1.105
+            quiet.loc[0, "close"] = 1.103
+            monitor_and_notify(quiet, self.plan, later, "EUR/USD")
         self.assertNotIn("last_status_alert_at", self.plan)
 
     @patch("plan_notifications.send_exit_alert")
