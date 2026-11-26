@@ -24,6 +24,21 @@ def monitor_plan(raw5, plan, now):
         if not plan.get("tp1_notified") and (high >= tp1 if buy else low <= tp1):
             plan["tp1_notified"] = True
             events.append({"type":"tp1","reason":"TP1 (1R) level touched","price":tp1,"time":stamp})
+
+        advice = plan.get("trade_advice") or {}
+        if advice.get("target_before_tp2") and not plan.get("profit_goal_notified"):
+            goal_price = float(advice["target_price"])
+            goal_hit = high >= goal_price if buy else low <= goal_price
+            if goal_hit:
+                plan["profit_goal_notified"] = True
+                events.append({
+                    "type":"exit",
+                    "reason":f'suggested +₹{advice.get("profit_goal_inr", 0):.0f} gross objective price touched',
+                    "price":goal_price,
+                    "time":stamp,
+                })
+                return events
+
         if (high >= tp2 if buy else low <= tp2):
             events.append({"type":"exit","reason":"planned TP2 (2R) touched","price":close,"time":stamp})
             return events

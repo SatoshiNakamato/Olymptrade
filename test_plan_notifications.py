@@ -82,6 +82,22 @@ class PlanNotificationTests(unittest.TestCase):
             monitor_and_notify(quiet, self.plan, later, "EUR/USD")
         self.assertNotIn("last_status_alert_at", self.plan)
 
+    @patch("plan_notifications.send_exit_alert", side_effect=RuntimeError("SMTP unavailable"))
+    def test_failed_rupee_target_exit_can_retry(self, send_exit):
+        self.plan["trade_advice"] = {
+            "target_before_tp2": True, "target_price": 1.105,
+            "profit_goal_inr": 50,
+        }
+        target_raw = self.raw.copy()
+        target_raw.loc[0, "high"] = 1.106
+        target_raw.loc[0, "low"] = 1.099
+        target_raw.loc[0, "close"] = 1.105
+        with self.assertRaisesRegex(RuntimeError, "SMTP unavailable"):
+            monitor_and_notify(target_raw, self.plan, self.now, "EUR/USD")
+        self.assertNotIn("profit_goal_notified", self.plan)
+        self.assertEqual(self.plan["last_checked_candle"], "2026-11-25T12:00:00+00:00")
+        send_exit.assert_called_once()
+
     @patch("plan_notifications.send_exit_alert")
     def test_exit_event_uses_exit_email(self, send_exit):
         stop_raw = self.raw.copy()

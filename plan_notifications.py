@@ -13,6 +13,8 @@ def monitor_and_notify(raw5, plan, now, symbol):
     had_tp1_flag = "tp1_notified" in plan
     status_before = plan.get("last_status_alert_at")
     had_status_flag = "last_status_alert_at" in plan
+    goal_before = plan.get("profit_goal_notified", False)
+    had_goal_flag = "profit_goal_notified" in plan
 
     events = monitor_plan(raw5, plan, now)
     tp1_delivered = False
@@ -47,6 +49,10 @@ def monitor_and_notify(raw5, plan, now, symbol):
             plan["last_status_alert_at"] = status_before
         else:
             plan.pop("last_status_alert_at", None)
+        if had_goal_flag:
+            plan["profit_goal_notified"] = goal_before
+        else:
+            plan.pop("profit_goal_notified", None)
         raise
 
     return events

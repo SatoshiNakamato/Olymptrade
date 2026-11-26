@@ -66,6 +66,17 @@ class PlanMonitorTests(unittest.TestCase):
         self.assertEqual(exit_events[0]["type"], "exit")
         self.assertIn("stop-loss", exit_events[0]["reason"])
 
+    def test_suggested_rupee_objective_triggers_manual_exit_event(self):
+        self.plan["trade_advice"] = {
+            "target_before_tp2": True, "target_price": 1.105,
+            "profit_goal_inr": 50,
+        }
+        raw = self.bars([(5, 1.100, 1.106, 1.099, 1.105)])
+        events = monitor_plan(raw, self.plan, self.now)
+        self.assertEqual([event["type"] for event in events], ["exit"])
+        self.assertIn("₹50", events[0]["reason"])
+        self.assertAlmostEqual(events[0]["price"], 1.105)
+
     def test_unclosed_five_minute_candle_is_ignored(self):
         raw = self.bars([(5, 1.100, 1.115, 1.095, 1.110)])
         before_close = datetime(2026, 11, 25, 12, 9, 59, tzinfo=timezone.utc)
