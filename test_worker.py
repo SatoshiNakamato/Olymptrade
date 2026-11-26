@@ -1,67 +1,84 @@
-"""Tests for independent strategy processes and market-data prefetch."""
+"""Tests for eight independent Voroa market agents and safe state migration."""
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import worker
 
 
-class WorkerProcessTests(unittest.TestCase):
-
-    def test_all_strategy_processes_launch_before_any_process_is_waited_on(self):
-        original_strategies = worker.STRATEGIES
-        worker.STRATEGIES = (
-            ("main.py", "EUR/USD"),
-            ("strategy2.py", "EUR/USD"),
-            ("strategy3.py", "EUR/USD"),
+class WorkerMarketAgentTests(unittest.TestCase):
+    def test_exactly_eight_markets_are_configured(self):
+        self.assertEqual(len(worker.MARKETS), 8)
+        self.assertEqual(
+            set(worker.MARKETS),
+            {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
+             "XAU/USD", "XAG/USD", "BTC/USD", "US500"},
         )
-        launched = []
+
+    def test_all_market_agents_are_launched_without_serial_waits(self):
+        started = []
 
         class FakeProcess:
-            def __init__(self, pid):
-                self.pid = pid
+            pass
 
-            def wait(self, timeout=None):
-                # This assertion fails if the supervisor waits after launching
-                # only one or two strategies instead of launching all three first.
-                if len(launched) != 3:
-                    raise AssertionError("a strategy was awaited before all three launched")
-                return 0
+        def fake_launch(symbol):
+            started.append(symbol)
+            return FakeProcess()
 
-        def fake_popen(args, cwd, env):
-            script = args[-1].rsplit("/", 1)[-1]
-            launched.append(script)
-            return FakeProcess(len(launched) + 1000)
+        with patch.object(worker, "launch_agent", side_effect=fake_launch):
+            launched = worker.launch_all_agents()
 
-        try:
-            with patch("worker.warm_market_data", return_value={"EUR/USD"}), \
-                 patch("worker.subprocess.Popen", side_effect=fake_popen):
-                worker.run_cycle()
-            self.assertCountEqual(
-                launched, ["main.py", "strategy2.py", "strategy3.py"]
+        self.assertEqual(set(started), set(worker.MARKETS))
+        self.assertEqual(set(launched), set(worker.MARKETS))
+        self.assertEqual(len(started), 8)
+
+    def test_old_shared_state_is_migrated_per_market_without_overwriting_existing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            agents = root / ".voroa_agents"
+            root.mkdir()
+            (root / ".signal_state.json").write_text(json.dumps({
+                "EUR/USD": {"key": "eur-key", "active_plan": {"action": "BUY"}},
+                "BTC/USD": {"key": "btc-key"},
+            }), encoding="utf-8")
+            (root / ".strategy2_state.json").write_text(json.dumps({
+                "EUR/USD": {"key": "s2-eur"},
+            }), encoding="utf-8")
+            (root / ".strategy3_state.json").write_text(json.dumps({
+                "BTC/USD": {"key": "s3-btc"},
+            }), encoding="utf-8")
+
+            with patch.object(worker, "ROOT", root), patch.object(worker, "AGENT_DIR", agents):
+                eur_dir = worker.prepare_agent_state("EUR/USD")
+                btc_dir = worker.prepare_agent_state("BTC/USD")
+
+            eur = json.loads((eur_dir / ".signal_state.json").read_text(encoding="utf-8"))
+            btc = json.loads((btc_dir / ".signal_state.json").read_text(encoding="utf-8"))
+            self.assertEqual(eur, {"EUR/USD": {"key": "eur-key", "active_plan": {"action": "BUY"}}})
+            self.assertEqual(btc, {"BTC/USD": {"key": "btc-key"}})
+            self.assertTrue((eur_dir / ".strategy2_state.json").exists())
+            self.assertTrue((btc_dir / ".strategy3_state.json").exists())
+
+    def test_existing_agent_state_is_never_overwritten_by_legacy_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            agents = root / ".voroa_agents"
+            root.mkdir()
+            (root / ".signal_state.json").write_text(
+                json.dumps({"EUR/USD": {"key": "legacy"}}), encoding="utf-8"
             )
-        finally:
-            worker.STRATEGIES = original_strategies
-            worker.RUNNING_PROCESSES.clear()
+            state_dir = agents / "eur_usd"
+            state_dir.mkdir(parents=True)
+            target = state_dir / ".signal_state.json"
+            target.write_text(json.dumps({"EUR/USD": {"key": "current"}}), encoding="utf-8")
 
-    def test_only_markets_with_both_required_timeframes_are_enabled(self):
-        original_strategies = worker.STRATEGIES
-        original_intervals = worker.DATA_INTERVALS
-        worker.STRATEGIES = (("main.py", "EUR/USD,XAU/USD"),)
-        worker.DATA_INTERVALS = ("5min", "1hour")
+            with patch.object(worker, "ROOT", root), patch.object(worker, "AGENT_DIR", agents):
+                worker.prepare_agent_state("EUR/USD")
 
-        def fake_fetch(symbol, interval="5min", **kwargs):
-            if symbol == "XAU/USD" and interval == "1hour":
-                raise RuntimeError("simulated data outage")
-            return object()
-
-        try:
-            with patch("worker.fetch_candles", side_effect=fake_fetch) as mocked:
-                available = worker.warm_market_data()
-            self.assertEqual(available, {"EUR/USD"})
-            self.assertEqual(mocked.call_count, 4)
-        finally:
-            worker.STRATEGIES = original_strategies
-            worker.DATA_INTERVALS = original_intervals
+            saved = json.loads(target.read_text(encoding="utf-8"))
+            self.assertEqual(saved["EUR/USD"]["key"], "current")
 
 
 if __name__ == "__main__":
