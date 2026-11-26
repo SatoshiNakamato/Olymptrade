@@ -110,7 +110,7 @@ def send_exit_alert(symbol, action, reason, price, plan):
         f"Planned stop loss: {_price(plan['stop_loss'], symbol)}\n"
         f"Planned take profit: {_price(plan['take_profit_2'], symbol)}\n\n"
         "CLOSE MANUALLY if your position is still open and this exit condition applies. "
-        "This monitors theoretical chart levels only; it cannot verify your fill or close "
+        "This monitors theoretical chart levels only; it cannot verify that you entered or close "
         "a position on Olymptrade. Check the actual broker quote and P/L."
     )
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as smtp:
