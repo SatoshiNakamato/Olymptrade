@@ -27,14 +27,16 @@ def _file_lock(lock_path):
 @contextmanager
 def _state_lock():
     """Serialize shared-state reads and atomic writes, never SMTP delivery."""
-    yield from _file_lock(STATE_PATH.with_name(STATE_PATH.name + ".lock"))
+    with _file_lock(STATE_PATH.with_name(STATE_PATH.name + ".lock")):
+        yield
 
 
 @contextmanager
 def _alert_lock(symbol, action):
     """Serialize only identical symbol/direction alerts across processes."""
     key = hashlib.sha256(f"{symbol}|{action}".encode("utf-8")).hexdigest()
-    yield from _file_lock(STATE_PATH.with_name(f"{STATE_PATH.name}.{key}.lock"))
+    with _file_lock(STATE_PATH.with_name(f"{STATE_PATH.name}.{key}.lock")):
+        yield
 
 
 def _read_state():
