@@ -8,11 +8,15 @@ import signal
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
+from market_data import fetch_candles
+
 ROOT = Path(__file__).resolve().parent
 INTERVAL_SECONDS = 20
+DATA_INTERVALS = ("5min", "1hour")
 STOP = False
 
 STRATEGIES = (
@@ -66,11 +70,72 @@ def run_strategy(script, symbols):
     return result.returncode
 
 
+def warm_market_data():
+    """Fetch shared candle sets concurrently before the strategies scan.
+
+    The strategy scripts then read the same short-lived on-disk cache instead
+    of serially waiting on the quote API for every market/timeframe.
+    """
+    symbols = sorted({
+        symbol.strip()
+        for _, configured in STRATEGIES
+        for symbol in configured.split(",")
+        if symbol.strip()
+    })
+    jobs = {
+        (symbol, interval): None
+        for symbol in symbols
+        for interval in DATA_INTERVALS
+    }
+    started = time.monotonic()
+    succeeded = set()
+    failures = []
+
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(jobs)))) as pool:
+        pending = {
+            pool.submit(fetch_candles, symbol, interval=interval): (symbol, interval)
+            for symbol, interval in jobs
+        }
+        for future in as_completed(pending):
+            symbol, interval = pending[future]
+            try:
+                future.result()
+                succeeded.add((symbol, interval))
+            except Exception as exc:
+                failures.append((symbol, interval, f"{type(exc).__name__}: {exc}"))
+                log(f"DATA ERROR {symbol} {interval}: {type(exc).__name__}: {exc}")
+
+    available = {
+        symbol for symbol in symbols
+        if all((symbol, interval) in succeeded for interval in DATA_INTERVALS)
+    }
+    elapsed = time.monotonic() - started
+    log(
+        f"Market-data prefetch: {len(succeeded)}/{len(jobs)} datasets ready "
+        f"in {elapsed:.1f}s; {len(available)}/{len(symbols)} markets available."
+    )
+    return available
+
+
 def run_cycle():
     failures = []
-    for script, symbols in STRATEGIES:
+    available = warm_market_data()
+    if STOP:
+        return
+    if not available:
+        log("CYCLE skipped: no market has a complete fresh 5m/1h data set.")
+        return
+
+    for script, configured_symbols in STRATEGIES:
         if STOP:
             break
+        symbols = ",".join(
+            symbol for symbol in configured_symbols.split(",")
+            if symbol in available
+        )
+        if not symbols:
+            log(f"SKIP {script}: no markets have complete fresh data.")
+            continue
         code = run_strategy(script, symbols)
         if code:
             failures.append(f"{script}={code}")
