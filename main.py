@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from market_data import fetch_candles
 from signals import evaluate
 from email_alerts import send_alert, send_exit_alert
-from market_filters import london_session_status, usd_high_impact_news_status
+from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert
 from alert_dedupe import is_duplicate, record_sent
@@ -32,7 +32,7 @@ def _as_utc(value):
 
 
 def main():
-    symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
+    symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500").split(",") if s.strip()]
     state, now = load_state(), datetime.now(timezone.utc)
     in_session, session_reason = london_session_status(now)
     failures = []
@@ -62,13 +62,17 @@ def main():
             # Session/news filters block entries, not monitoring of existing plans.
             # FX and gold follow the London-session filter; crypto trades 24/7.
             is_crypto = symbol.upper().startswith(("BTC/", "ETH/"))
-            if not is_crypto and not in_session:
-                print(f"{symbol} new entries skipped: {session_reason}")
+            if symbol == "US500":
+                market_open, market_reason = new_york_session_status(now)
+            else:
+                market_open, market_reason = in_session, session_reason
+            if not is_crypto and not market_open:
+                print(f"{symbol} new entries skipped: {market_reason}")
                 continue
-            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD"}:
+            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}:
                 news_ok, news_reason = usd_high_impact_news_status(now)
                 if not news_ok:
-                    print(f"XAU/USD new entry skipped: {news_reason}")
+                    print(f"{symbol} new entry skipped: {news_reason}")
                     continue
 
             signal = evaluate(symbol, candles, now, raw_1h=hourly)
