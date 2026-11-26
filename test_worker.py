@@ -61,6 +61,19 @@ class WorkerMarketAgentTests(unittest.TestCase):
             self.assertTrue((eur_dir / ".strategy2_state.json").exists())
             self.assertTrue((btc_dir / ".strategy3_state.json").exists())
 
+    def test_startup_email_test_remains_explicitly_opt_in(self):
+        import os
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "send_test_email.py").write_text("# test", encoding="utf-8")
+            with patch.object(worker, "ROOT", root), \\
+                 patch.dict(os.environ, {"SEND_TEST_EMAIL_ON_START": "true"}), \\
+                 patch("worker.subprocess.run") as run:
+                worker.run_startup_email_test()
+            run.assert_called_once()
+            self.assertEqual(run.call_args.args[0][-1], str(root / "send_test_email.py"))
+
     def test_existing_agent_state_is_never_overwritten_by_legacy_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "repo"
