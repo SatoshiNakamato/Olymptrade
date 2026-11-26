@@ -32,7 +32,7 @@ def _as_utc(value):
 
 
 def main():
-    symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
+    symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,BTC/USD").split(",") if s.strip()]
     state, now = load_state(), datetime.now(timezone.utc)
     in_session, session_reason = london_session_status(now)
     failures = []
@@ -65,7 +65,7 @@ def main():
             if not is_crypto and not in_session:
                 print(f"{symbol} new entries skipped: {session_reason}")
                 continue
-            if symbol == "XAU/USD":
+            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD"}:
                 news_ok, news_reason = usd_high_impact_news_status(now)
                 if not news_ok:
                     print(f"XAU/USD new entry skipped: {news_reason}")
