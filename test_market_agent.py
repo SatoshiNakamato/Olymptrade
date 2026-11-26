@@ -41,6 +41,7 @@ class MarketAgentTests(unittest.TestCase):
         from pathlib import Path
 
         old_root = market_agent.ROOT
+        old_agent_symbol = market_agent.SYMBOL
         old_symbol = os.environ.get("VOROA_SYMBOL")
         old_global = os.environ.get("GLOBAL_ALERT_STATE_PATH")
         try:
@@ -48,6 +49,7 @@ class MarketAgentTests(unittest.TestCase):
                 root = Path(tmp)
                 (root / "main.py").write_text("# test", encoding="utf-8")
                 market_agent.ROOT = root
+                market_agent.SYMBOL = "XAG/USD"
                 os.environ["VOROA_SYMBOL"] = "XAG/USD"
                 os.environ["GLOBAL_ALERT_STATE_PATH"] = str(root / ".global_alert_state.json")
 
@@ -66,6 +68,7 @@ class MarketAgentTests(unittest.TestCase):
                 )
         finally:
             market_agent.ROOT = old_root
+            market_agent.SYMBOL = old_agent_symbol
             if old_symbol is None:
                 os.environ.pop("VOROA_SYMBOL", None)
             else:
