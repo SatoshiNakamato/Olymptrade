@@ -1,7 +1,10 @@
-"""Persistent Voroa supervisor for three independent strategy scanner processes.
+"""Voroa supervisor: one isolated, persistent agent per market.
 
-Each strategy runs in its own OS process. This service never places trades.
+Each market agent runs all three existing strategy evaluators independently.
+Strategy rules remain in main.py, strategy2.py, strategy3.py and signals.py.
+This service sends alerts only; it never places broker orders.
 """
+import json
 import os
 import signal
 import subprocess
@@ -14,17 +17,21 @@ from pathlib import Path
 from market_data import fetch_candles
 
 ROOT = Path(__file__).resolve().parent
-INTERVAL_SECONDS = 20
+AGENT_DIR = ROOT / ".voroa_agents"
+GLOBAL_ALERT_STATE = ROOT / ".global_alert_state.json"
+MARKETS = (
+    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
+    "XAU/USD", "XAG/USD", "BTC/USD", "US500",
+)
 DATA_INTERVALS = ("5min", "1hour")
 REQUIRED_INTERVALS = ("5min", "1hour")
-STRATEGY_TIMEOUT_SECONDS = 240
+AGENT_RESTART_SECONDS = 5
 STOP = False
-RUNNING_PROCESSES = {}
-
-STRATEGIES = (
-    ("main.py", "EUR/USD,XAU/USD,BTC/USD"),
-    ("strategy2.py", "EUR/USD,XAU/USD,BTC/USD"),
-    ("strategy3.py", "EUR/USD,XAU/USD,XAG/USD,BTC/USD"),
+RUNNING_AGENTS = {}
+STATE_FILES = (
+    ".signal_state.json",
+    ".strategy2_state.json",
+    ".strategy3_state.json",
 )
 
 
@@ -33,70 +40,61 @@ def log(message):
     print(f"[{stamp}] {message}", flush=True)
 
 
+def _slug(symbol):
+    return symbol.lower().replace("/", "_")
+
+
+def _atomic_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def prepare_agent_state(symbol):
+    """Migrate the old shared per-strategy state into isolated per-market files."""
+    state_dir = AGENT_DIR / _slug(symbol)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    for filename in STATE_FILES:
+        destination = state_dir / filename
+        if destination.exists():
+            continue
+        source = ROOT / filename
+        try:
+            old_state = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(old_state, dict) and symbol in old_state:
+            _atomic_json(destination, {symbol: old_state[symbol]})
+            log(f"STATE_MIGRATED {symbol} {filename}")
+    return state_dir
+
+
 def request_stop(signum, frame):
     global STOP
     STOP = True
-    log(f"Received stop signal {signum}; stopping active strategy processes.")
-    for script, process in list(RUNNING_PROCESSES.items()):
+    log(f"Received stop signal {signum}; stopping all market agents.")
+    for symbol, process in list(RUNNING_AGENTS.items()):
         try:
             if process.poll() is None:
-                log(f"STOP_REQUEST {script} pid={process.pid}")
+                log(f"AGENT_STOP_REQUEST {symbol} pid={process.pid}")
                 process.terminate()
         except (OSError, ProcessLookupError):
             pass
 
 
-def run_strategy(script, symbols):
-    """Run a one-off helper (for example, an explicitly requested email test)."""
-    path = ROOT / script
-    if not path.is_file():
-        log(f"SKIP {script}: file not found at {path}")
-        return 2
-
-    env = os.environ.copy()
-    env["SYMBOLS"] = symbols
-    env["PYTHONUNBUFFERED"] = "1"
-
-    log(f"START {script} | symbols={symbols}")
-    try:
-        result = subprocess.run(
-            [sys.executable, "-u", str(path)],
-            cwd=str(ROOT),
-            env=env,
-            check=False,
-            timeout=STRATEGY_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
-        log(f"ERROR {script}: exceeded {STRATEGY_TIMEOUT_SECONDS}-second timeout")
-        return 124
-    except Exception as exc:
-        log(f"ERROR {script}: {type(exc).__name__}: {exc}")
-        return 1
-
-    if result.returncode == 0:
-        log(f"FINISH {script}: exit code 0")
-    else:
-        log(f"ERROR {script}: exit code {result.returncode}")
-    return result.returncode
-
-
 def warm_market_data():
-    """Fetch shared candle sets concurrently before the strategy processes start."""
-    symbols = sorted({
-        symbol.strip()
-        for _, configured in STRATEGIES
-        for symbol in configured.split(",")
-        if symbol.strip()
-    })
-    jobs = [
-        (symbol, interval)
-        for symbol in symbols
-        for interval in DATA_INTERVALS
-    ]
-    started = time.monotonic()
+    jobs = [(symbol, interval) for symbol in MARKETS for interval in DATA_INTERVALS]
     succeeded = set()
-
-    with ThreadPoolExecutor(max_workers=min(8, max(1, len(jobs)))) as pool:
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=8) as pool:
         pending = {
             pool.submit(fetch_candles, symbol, interval=interval): (symbol, interval)
             for symbol, interval in jobs
@@ -107,165 +105,90 @@ def warm_market_data():
                 future.result()
                 succeeded.add((symbol, interval))
             except Exception as exc:
-                log(f"DATA ERROR {symbol} {interval}: {type(exc).__name__}: {exc}")
-
-    available = {
-        symbol for symbol in symbols
+                log(f"DATA_PREFETCH_ERROR {symbol} {interval}: {type(exc).__name__}: {exc}")
+    ready = {
+        symbol for symbol in MARKETS
         if all((symbol, interval) in succeeded for interval in REQUIRED_INTERVALS)
     }
-    elapsed = time.monotonic() - started
     log(
-        f"Market-data prefetch: {len(succeeded)}/{len(jobs)} datasets ready "
-        f"in {elapsed:.1f}s; {len(available)}/{len(symbols)} markets available."
+        f"DATA_PREFETCH {len(succeeded)}/{len(jobs)} datasets ready; "
+        f"{len(ready)}/{len(MARKETS)} markets warm. All agents will start regardless."
     )
-    return available
+    return ready
 
 
-def _launch_strategy(script, symbols):
-    path = ROOT / script
-    if not path.is_file():
-        log(f"SKIP {script}: file not found at {path}")
-        return None
-
+def launch_agent(symbol):
+    state_dir = prepare_agent_state(symbol)
+    path = ROOT / "market_agent.py"
     env = os.environ.copy()
-    env["SYMBOLS"] = symbols
-    env["PYTHONUNBUFFERED"] = "1"
+    env.update({
+        "VOROA_ROOT": str(ROOT),
+        "VOROA_SYMBOL": symbol,
+        "GLOBAL_ALERT_STATE_PATH": str(GLOBAL_ALERT_STATE),
+        "PYTHONUNBUFFERED": "1",
+    })
     try:
         process = subprocess.Popen(
             [sys.executable, "-u", str(path)],
-            cwd=str(ROOT),
+            cwd=str(state_dir),
             env=env,
         )
     except Exception as exc:
-        log(f"ERROR {script}: process launch failed: {type(exc).__name__}: {exc}")
+        log(f"AGENT_LAUNCH_ERROR {symbol}: {type(exc).__name__}: {exc}")
         return None
-
-    log(f"START {script} | pid={process.pid} | symbols={symbols}")
+    log(f"MARKET_AGENT_STARTED {symbol} pid={process.pid} state_dir={state_dir}")
     return process
 
 
-def _wait_for_strategy(script, process, launched_at):
-    remaining = max(
-        0.1,
-        STRATEGY_TIMEOUT_SECONDS - (time.monotonic() - launched_at),
-    )
-    try:
-        code = process.wait(timeout=remaining)
-    except subprocess.TimeoutExpired:
-        log(f"ERROR {script}: exceeded {STRATEGY_TIMEOUT_SECONDS}-second runtime; terminating")
-        process.terminate()
-        try:
-            code = process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            code = process.wait()
-
-    if code == 0:
-        log(f"FINISH {script}: exit code 0")
-    elif STOP:
-        log(f"STOPPED {script}: exit code {code}")
-    else:
-        log(f"ERROR {script}: exit code {code}")
-    return code
-
-
-def run_cycle():
-    failures = []
-    available = warm_market_data()
-    if STOP:
-        return
-    if not available:
-        log("CYCLE skipped: no market has a complete fresh 5m/1h data set.")
-        return
-
-    # Launch every scanner process before waiting for any scanner to finish.
-    # This makes the independence explicit and prevents one slow strategy from
-    # delaying the start of either of the other two.
-    launched = {}
-    try:
-        for script, configured_symbols in STRATEGIES:
-            if STOP:
-                break
-            symbols = ",".join(
-                symbol for symbol in configured_symbols.split(",")
-                if symbol in available
-            )
-            if not symbols:
-                log(f"SKIP {script}: no markets have complete fresh data.")
-                continue
-
-            process = _launch_strategy(script, symbols)
-            if process is None:
-                failures.append(f"{script}=launch_failed")
-                continue
-            launched[script] = (process, time.monotonic())
-            RUNNING_PROCESSES[script] = process
-
-        log(
-            f"STRATEGY_PROCESSES_LAUNCHED count={len(launched)}/"
-            f"{len(STRATEGIES)}; all launched processes now run independently."
-        )
-
-        # All children are already running. Waiting in this loop does not
-        # serialize their execution; each child continues scanning in parallel.
-        for script, (process, launched_at) in launched.items():
-            code = _wait_for_strategy(script, process, launched_at)
-            if code and not STOP:
-                failures.append(f"{script}={code}")
-    finally:
-        RUNNING_PROCESSES.clear()
-
-    if STOP:
-        return
-    if failures:
-        log("CYCLE completed with strategy errors: " + ", ".join(failures))
-    elif len(available) < len({
-        symbol.strip()
-        for _, configured in STRATEGIES
-        for symbol in configured.split(",")
-        if symbol.strip()
-    }):
-        log("CYCLE completed with partial market coverage; failed datasets were skipped safely.")
-    elif len(launched) != len(STRATEGIES):
-        log(f"CYCLE completed with {len(launched)}/{len(STRATEGIES)} strategy processes launched.")
-    else:
-        log("CYCLE completed: all three independent strategy processes exited successfully")
-
-
 def main():
+    global STOP
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
 
-    log("VOROA_WORKER_MODE=independent_os_processes_v2")
-    log("Voroa supervisor started: launching three independent strategy processes.")
-    log(f"Scan interval: {INTERVAL_SECONDS} seconds.")
-    log("Markets: EUR/USD, XAU/USD, XAG/USD, BTC/USD.")
+    log("VOROA_WORKER_MODE=eight_independent_market_agents_v1")
+    log("Markets: " + ", ".join(MARKETS))
+    log("Each market agent runs Strategy 1, Strategy 2 and Strategy 3 concurrently.")
     log("Mode: alert-only; no broker orders are placed.")
+    warm_market_data()
 
-    if os.getenv("SEND_TEST_EMAIL_ON_START", "").strip().lower() in {"1", "true", "yes"}:
-        log("Manual email test requested.")
-        test_code = run_strategy("send_test_email.py", "")
-        log(f"MANUAL EMAIL TEST: {'successful' if test_code == 0 else f'failed with exit code {test_code}'}.")
-
-    if os.getenv("SEND_TEST_ALERT_ON_START", "").strip().lower() in {"1", "true", "yes"}:
-        log("Manual BUY-alert pipeline test requested. No trade will be placed.")
-        test_code = run_strategy("send_test_alert.py", "")
-        log(f"BUY-ALERT PIPELINE TEST: {'successful' if test_code == 0 else f'failed with exit code {test_code}'}.")
-
-    next_run = time.monotonic()
-    while not STOP:
-        run_cycle()
+    next_restart = {symbol: 0.0 for symbol in MARKETS}
+    for symbol in MARKETS:
         if STOP:
             break
+        process = launch_agent(symbol)
+        if process is not None:
+            RUNNING_AGENTS[symbol] = process
+        else:
+            next_restart[symbol] = time.monotonic() + AGENT_RESTART_SECONDS
 
-        next_run = max(next_run + INTERVAL_SECONDS, time.monotonic())
-        delay = max(0, next_run - time.monotonic())
-        log(f"Next scan cycle in {int(delay)} seconds.")
-        while delay > 0 and not STOP:
-            time.sleep(min(1, delay))
-            delay = next_run - time.monotonic()
+    log(f"MARKET_AGENTS_LAUNCHED count={len(RUNNING_AGENTS)}/{len(MARKETS)}")
+    while not STOP:
+        now = time.monotonic()
+        for symbol in MARKETS:
+            if STOP:
+                break
+            process = RUNNING_AGENTS.get(symbol)
+            if process is not None and process.poll() is not None:
+                code = process.returncode
+                log(f"MARKET_AGENT_EXITED {symbol} exit_code={code}; restart scheduled")
+                RUNNING_AGENTS.pop(symbol, None)
+                next_restart[symbol] = now + AGENT_RESTART_SECONDS
+            if process is None and now >= next_restart[symbol]:
+                restarted = launch_agent(symbol)
+                if restarted is not None:
+                    RUNNING_AGENTS[symbol] = restarted
+                else:
+                    next_restart[symbol] = time.monotonic() + AGENT_RESTART_SECONDS
+        time.sleep(1)
 
-    log("Voroa alert worker stopped.")
+    for symbol, process in list(RUNNING_AGENTS.items()):
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+    RUNNING_AGENTS.clear()
+    log("Voroa eight-market supervisor stopped.")
 
 
 if __name__ == "__main__":
