@@ -1,4 +1,4 @@
-"""One-market Voroa agent; runs all original strategy scripts in parallel."""
+"""One-market Voroa agent; runs all original strategies with bounded memory."""
 import os
 import signal
 import subprocess
@@ -6,8 +6,6 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-
-from market_data import fetch_candles
 
 ROOT = Path(os.environ.get("VOROA_ROOT", Path(__file__).resolve().parent)).resolve()
 SYMBOL = os.environ.get("VOROA_SYMBOL", "TEST/MARKET")
@@ -26,7 +24,7 @@ def log(message):
 def request_stop(signum, frame):
     global STOP
     STOP = True
-    log(f"Stop signal {signum}; terminating active strategy evaluators.")
+    log(f"Stop signal {signum}; terminating active strategy evaluator.")
     for script, process in list(CHILDREN.items()):
         if process.poll() is None:
             try:
@@ -59,56 +57,51 @@ def launch_strategy(script):
     return process
 
 
-def warm_symbol_data():
-    """Prime the shared candle cache once per market before its three evaluators."""
-    for interval in ("5min", "1hour"):
-        try:
-            fetch_candles(SYMBOL, interval=interval)
-        except Exception as exc:
-            log(f"DATA_PREFETCH_WARNING {interval}: {type(exc).__name__}: {exc}")
-    # A failed prefetch does not disable the market; evaluators still retry normally.
-
-
 def run_cycle():
-    warm_symbol_data()
+    """Run all three strategy programs one at a time for this market."""
+    cycle_started = time.monotonic()
     failures = []
-    launched = {}
-    # Start all three strategy evaluators before waiting for any of them.
+    log("CYCLE_STARTED")
     for script in STRATEGIES:
         if STOP:
             break
+
         process = launch_strategy(script)
         if process is None:
             failures.append(f"{script}=launch_failed")
-        else:
-            launched[script] = (process, time.monotonic())
-            CHILDREN[script] = process
+            continue
 
-    log(f"STRATEGIES_LAUNCHED {len(launched)}/3")
-    for script, (process, started) in launched.items():
-        remaining = max(0.1, STRATEGY_TIMEOUT_SECONDS - (time.monotonic() - started))
+        CHILDREN[script] = process
+        strategy_started = time.monotonic()
         try:
-            code = process.wait(timeout=remaining)
+            code = process.wait(timeout=STRATEGY_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
-            log(f"ERROR {script}: timed out; terminating")
+            log(f"ERROR {script}: timed out after {STRATEGY_TIMEOUT_SECONDS}s; terminating")
             process.terminate()
             try:
                 code = process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
                 code = process.wait()
-        CHILDREN.pop(script, None)
+        finally:
+            CHILDREN.pop(script, None)
+
+        elapsed = time.monotonic() - strategy_started
         if code == 0:
-            log(f"STRATEGY_FINISHED {script} exit_code=0")
+            log(f"STRATEGY_FINISHED {script} exit_code=0 duration={elapsed:.1f}s")
         elif STOP:
-            log(f"STRATEGY_STOPPED {script} exit_code={code}")
+            log(f"STRATEGY_STOPPED {script} exit_code={code} duration={elapsed:.1f}s")
         else:
-            log(f"STRATEGY_ERROR {script} exit_code={code}")
+            log(f"STRATEGY_ERROR {script} exit_code={code} duration={elapsed:.1f}s")
             failures.append(f"{script}={code}")
-    if failures:
-        log("CYCLE_ERRORS " + ", ".join(failures))
+
+    elapsed = time.monotonic() - cycle_started
+    if STOP:
+        log(f"CYCLE_INTERRUPTED duration={elapsed:.1f}s")
+    elif failures:
+        log(f"CYCLE_FINISHED_WITH_ERRORS duration={elapsed:.1f}s: " + ", ".join(failures))
     else:
-        log("CYCLE_COMPLETE all three strategy evaluators finished")
+        log(f"CYCLE_COMPLETE all_three_strategies_finished duration={elapsed:.1f}s")
 
 
 def main():
@@ -116,17 +109,21 @@ def main():
     signal.signal(signal.SIGINT, request_stop)
     log("STARTED; isolated state directory=" + str(Path.cwd()))
     log("Original strategy logic/timeframes/filters are unchanged.")
+    log("Strategies execute sequentially per market; all eight markets remain concurrent.")
     log("Alert-only; no broker orders are placed.")
+
     while not STOP:
         started = time.monotonic()
         run_cycle()
         if STOP:
             break
-        delay = max(0.0, SCAN_INTERVAL_SECONDS - (time.monotonic() - started))
+        elapsed = time.monotonic() - started
+        delay = max(0.0, SCAN_INTERVAL_SECONDS - elapsed)
         log(f"NEXT_CYCLE_IN {delay:.1f}s")
         deadline = time.monotonic() + delay
         while not STOP and time.monotonic() < deadline:
             time.sleep(min(0.5, deadline - time.monotonic()))
+
     request_stop(signal.SIGTERM, None)
     for process in list(CHILDREN.values()):
         try:

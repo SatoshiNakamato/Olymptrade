@@ -1,4 +1,4 @@
-"""Tests for per-market parallel strategy execution."""
+"""Tests for per-market sequential strategy execution and scan timing."""
 import unittest
 from unittest.mock import patch
 
@@ -9,31 +9,40 @@ class MarketAgentTests(unittest.TestCase):
     def test_scan_interval_is_one_minute(self):
         self.assertEqual(market_agent.SCAN_INTERVAL_SECONDS, 60)
 
-    def test_all_three_strategy_processes_launch_before_waiting(self):
+    def test_strategies_run_one_at_a_time_in_original_order(self):
         original_children = dict(market_agent.CHILDREN)
         market_agent.CHILDREN.clear()
         launched = []
+        active = 0
+        maximum_active = 0
 
         class FakeProcess:
-            def __init__(self, script):
-                self.script = script
-
             def wait(self, timeout=None):
-                if len(launched) != 3:
-                    raise AssertionError("agent waited before launching all three strategies")
+                nonlocal active
+                self.assert_active()
+                active -= 1
                 return 0
 
+            @staticmethod
+            def assert_active():
+                if active != 1:
+                    raise AssertionError(f"expected exactly one active child, got {active}")
+
         def fake_launch(script):
+            nonlocal active, maximum_active
             launched.append(script)
-            return FakeProcess(script)
+            active += 1
+            maximum_active = max(maximum_active, active)
+            return FakeProcess()
 
         try:
-            with patch.object(market_agent, "warm_symbol_data"), \
-                 patch.object(market_agent, "launch_strategy", side_effect=fake_launch):
+            with patch.object(market_agent, "launch_strategy", side_effect=fake_launch):
                 market_agent.run_cycle()
-            self.assertCountEqual(
+            self.assertEqual(
                 launched, ["main.py", "strategy2.py", "strategy3.py"]
             )
+            self.assertEqual(maximum_active, 1)
+            self.assertEqual(active, 0)
         finally:
             market_agent.CHILDREN.clear()
             market_agent.CHILDREN.update(original_children)
