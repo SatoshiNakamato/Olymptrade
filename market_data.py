@@ -20,6 +20,9 @@ DEFAULT_OUTPUTSIZE = 1600
 CACHE_DIR = Path(tempfile.gettempdir()) / "olymptrade-market-cache"
 SYMBOL_MAP = {
     "EUR/USD": "EURUSD",
+    "GBP/USD": "GBPUSD",
+    "USD/JPY": "USDJPY",
+    "AUD/USD": "AUDUSD",
     "XAU/USD": "XAUUSD",
     "XAG/USD": "XAGUSD",
     "BTC/USD": "BTCUSD",
