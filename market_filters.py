@@ -63,7 +63,7 @@ def _save_calendar_cache(events):
     finally:
         try:
             temp.unlink()
-        except FileNotFoundError:
+        except OSError:
             pass
 
 
