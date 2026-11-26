@@ -2,3 +2,10 @@
 *.py[cod]
 __pycache__/
 .signal_state.json
+.strategy2_state.json
+.strategy3_state.json
+.global_alert_state.json
+.global_alert_state.json.*
+.usd_calendar_cache.json
+.voroa_agents/
+*.lock
