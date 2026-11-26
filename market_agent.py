@@ -7,6 +7,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from market_data import fetch_candles
+
 ROOT = Path(os.environ["VOROA_ROOT"]).resolve()
 SYMBOL = os.environ["VOROA_SYMBOL"]
 STRATEGIES = ("main.py", "strategy2.py", "strategy3.py")
@@ -57,7 +59,18 @@ def launch_strategy(script):
     return process
 
 
+def warm_symbol_data():
+    """Prime the shared candle cache once per market before its three evaluators."""
+    for interval in ("5min", "1hour"):
+        try:
+            fetch_candles(SYMBOL, interval=interval)
+        except Exception as exc:
+            log(f"DATA_PREFETCH_WARNING {interval}: {type(exc).__name__}: {exc}")
+    # A failed prefetch does not disable the market; evaluators still retry normally.
+
+
 def run_cycle():
+    warm_symbol_data()
     failures = []
     launched = {}
     # Start all three strategy evaluators before waiting for any of them.
