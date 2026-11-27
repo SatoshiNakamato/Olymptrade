@@ -35,7 +35,7 @@ def _save_state(state):
             os.unlink(temp_name)
 
 
-DEFAULT_SYMBOLS = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "BTC/USD", "US500"]
+DEFAULT_SYMBOLS = ["XAU/USD", "XAG/USD", "US500"]
 
 
 def _requires_usd_news_filter(symbol):
