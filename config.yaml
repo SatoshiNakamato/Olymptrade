@@ -1,6 +1,7 @@
 symbols:
-  - EUR/USD
   - XAU/USD
+  - XAG/USD
+  - US500
 intervals:
   entry: 5min
   confirmation: 15min
