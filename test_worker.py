@@ -1,99 +1,119 @@
-"""Tests for eight independent Voroa market agents and safe state migration."""
+"""Regression tests for the single-process central scanner."""
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-import worker
+import central_worker as scanner
 
 
-class WorkerMarketAgentTests(unittest.TestCase):
-    def test_exactly_eight_markets_are_configured(self):
-        self.assertEqual(len(worker.MARKETS), 8)
+class CentralScannerTests(unittest.TestCase):
+    def test_exactly_eight_markets_and_three_strategies(self):
+        self.assertEqual(len(scanner.MARKETS), 8)
+        self.assertEqual(len(scanner.STRATEGY_MODULES), 3)
         self.assertEqual(
-            set(worker.MARKETS),
+            set(scanner.MARKETS),
             {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
              "XAU/USD", "XAG/USD", "BTC/USD", "US500"},
         )
 
-    def test_all_market_agents_are_launched_without_serial_waits(self):
-        started = []
+    def test_shared_feed_downloads_each_symbol_interval_once_per_cycle(self):
+        calls = []
+        frame = SimpleNamespace(copy=lambda deep=True: "frame-copy")
 
-        class FakeProcess:
-            pass
+        def original(symbol, outputsize=1600, interval="5min"):
+            calls.append((symbol, outputsize, interval))
+            return frame
 
-        def fake_launch(symbol):
-            started.append(symbol)
-            return FakeProcess()
+        fetch, cache, counts = scanner._shared_market_feed(original)
+        self.assertEqual(fetch("EUR/USD", interval="5min"), "frame-copy")
+        self.assertEqual(fetch("EUR/USD", interval="5min"), "frame-copy")
+        self.assertEqual(fetch("EUR/USD", interval="1hour"), "frame-copy")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(counts, {"hits": 1, "misses": 2})
+        self.assertEqual(len(cache), 2)
 
-        with patch.object(worker, "launch_agent", side_effect=fake_launch):
-            launched = worker.launch_all_agents()
+    def test_all_three_strategy_mains_run_in_one_process_and_share_feed(self):
+        calls = []
+        feed_calls = []
 
-        self.assertEqual(set(started), set(worker.MARKETS))
-        self.assertEqual(set(launched), set(worker.MARKETS))
-        self.assertEqual(len(started), 8)
+        class FakeFrame:
+            def copy(self, deep=True):
+                return self
 
-    def test_old_shared_state_is_migrated_per_market_without_overwriting_existing(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "repo"
-            agents = root / ".voroa_agents"
-            root.mkdir()
-            (root / ".signal_state.json").write_text(json.dumps({
-                "EUR/USD": {"key": "eur-key", "active_plan": {"action": "BUY"}},
-                "BTC/USD": {"key": "btc-key"},
-            }), encoding="utf-8")
-            (root / ".strategy2_state.json").write_text(json.dumps({
-                "EUR/USD": {"key": "s2-eur"},
-            }), encoding="utf-8")
-            (root / ".strategy3_state.json").write_text(json.dumps({
-                "BTC/USD": {"key": "s3-btc"},
-            }), encoding="utf-8")
+        frame = FakeFrame()
 
-            with patch.object(worker, "ROOT", root), patch.object(worker, "AGENT_DIR", agents):
-                eur_dir = worker.prepare_agent_state("EUR/USD")
-                btc_dir = worker.prepare_agent_state("BTC/USD")
+        def original_fetch(symbol, outputsize=1600, interval="5min"):
+            feed_calls.append((symbol, outputsize, interval))
+            return frame
 
-            eur = json.loads((eur_dir / ".signal_state.json").read_text(encoding="utf-8"))
-            btc = json.loads((btc_dir / ".signal_state.json").read_text(encoding="utf-8"))
-            self.assertEqual(eur, {"EUR/USD": {"key": "eur-key", "active_plan": {"action": "BUY"}}})
-            self.assertEqual(btc, {"BTC/USD": {"key": "btc-key"}})
-            self.assertTrue((eur_dir / ".strategy2_state.json").exists())
-            self.assertTrue((btc_dir / ".strategy3_state.json").exists())
+        fake_market_data = SimpleNamespace(fetch_candles=original_fetch)
+        fake_modules = {}
+        for name in scanner.STRATEGY_MODULES:
+            def make_main(strategy_name):
+                def run():
+                    calls.append(strategy_name)
+                    module = fake_modules[strategy_name]
+                    module.fetch_candles("EUR/USD", interval="5min")
+                return run
+            fake_modules[name] = SimpleNamespace(main=make_main(name), fetch_candles=None)
 
-    def test_startup_email_test_remains_explicitly_opt_in(self):
-        import os
+        def importer(name):
+            if name == "market_data":
+                return fake_market_data
+            return fake_modules[name]
 
+        with patch.object(scanner.importlib, "import_module", side_effect=importer):
+            self.assertTrue(scanner.run_cycle())
+
+        self.assertEqual(calls, list(scanner.STRATEGY_MODULES))
+        self.assertEqual(len(feed_calls), 1)
+        self.assertEqual(fake_market_data.fetch_candles, original_fetch)
+
+    def test_previous_per_market_state_is_migrated_without_deleting_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "send_test_email.py").write_text("# test", encoding="utf-8")
-            with (
-                patch.object(worker, "ROOT", root),
-                patch.dict(os.environ, {"SEND_TEST_EMAIL_ON_START": "true"}),
-                patch("worker.subprocess.run") as run,
-            ):
-                worker.run_startup_email_test()
-            run.assert_called_once()
-            self.assertEqual(run.call_args.args[0][-1], str(root / "send_test_email.py"))
+            agent_dir = root / ".voroa_agents" / "eur_usd"
+            agent_dir.mkdir(parents=True)
+            source = agent_dir / ".signal_state.json"
+            source.write_text(json.dumps({
+                "EUR/USD": {
+                    "key": "old-agent-key",
+                    "sent_at": "2026-11-27T01:00:00+00:00",
+                    "active_plan": {"action": "BUY"},
+                }
+            }), encoding="utf-8")
+            with patch.object(scanner, "ROOT", root):
+                scanner.migrate_market_state()
+            destination = json.loads((root / ".signal_state.json").read_text())
+            self.assertEqual(destination["EUR/USD"]["key"], "old-agent-key")
+            self.assertEqual(destination["EUR/USD"]["active_plan"]["action"], "BUY")
+            self.assertTrue(source.exists())
 
-    def test_existing_agent_state_is_never_overwritten_by_legacy_state(self):
+    def test_existing_newer_central_state_is_preserved_during_migration(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "repo"
-            agents = root / ".voroa_agents"
-            root.mkdir()
-            (root / ".signal_state.json").write_text(
-                json.dumps({"EUR/USD": {"key": "legacy"}}), encoding="utf-8"
-            )
-            state_dir = agents / "eur_usd"
-            state_dir.mkdir(parents=True)
-            target = state_dir / ".signal_state.json"
-            target.write_text(json.dumps({"EUR/USD": {"key": "current"}}), encoding="utf-8")
+            root = Path(tmp)
+            agent_dir = root / ".voroa_agents" / "eur_usd"
+            agent_dir.mkdir(parents=True)
+            (root / ".signal_state.json").write_text(json.dumps({
+                "EUR/USD": {"key": "central", "sent_at": "2026-11-27T02:00:00+00:00"}
+            }), encoding="utf-8")
+            (agent_dir / ".signal_state.json").write_text(json.dumps({
+                "EUR/USD": {"key": "older-agent", "sent_at": "2026-11-27T01:00:00+00:00"}
+            }), encoding="utf-8")
+            with patch.object(scanner, "ROOT", root):
+                scanner.migrate_market_state()
+            destination = json.loads((root / ".signal_state.json").read_text())
+            self.assertEqual(destination["EUR/USD"]["key"], "central")
 
-            with patch.object(worker, "ROOT", root), patch.object(worker, "AGENT_DIR", agents):
-                worker.prepare_agent_state("EUR/USD")
-
-            saved = json.loads(target.read_text(encoding="utf-8"))
-            self.assertEqual(saved["EUR/USD"]["key"], "current")
+    def test_operating_window_uses_india_time(self):
+        inside = datetime.fromisoformat("2026-11-27T12:00:00+05:30")
+        outside = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
+        self.assertTrue(scanner.in_operating_window(inside))
+        self.assertFalse(scanner.in_operating_window(outside))
 
 
 if __name__ == "__main__":
