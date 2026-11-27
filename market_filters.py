@@ -36,12 +36,12 @@ def new_york_session_status(now_utc):
 
 
 def strategy3_entry_session_status(symbol, now_utc):
-    """Strategy 3 metals scan 24/5; US500 remains limited to NY cash hours."""
+    """Strategy 3 metals scan all weekday hours; US500 remains limited to NY cash hours."""
     market = str(symbol).upper()
     if market in {"XAU/USD", "XAG/USD"}:
         if now_utc.weekday() >= 5:
             return False, "Weekend: Strategy 3 metals scanning is closed"
-        return True, "Strategy 3 metals session (24/5; no London-hours restriction)"
+        return True, "Strategy 3 metals session (all weekday hours; no London-hours restriction)"
     if market == "US500":
         return new_york_session_status(now_utc)
     return False, f"Unsupported market: {market}"
