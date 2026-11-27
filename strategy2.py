@@ -218,7 +218,7 @@ def _send_email(signal):
     symbol = signal["symbol"]
     advice = recommend_trade(signal)
     signal["trade_advice"] = advice
-    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol in {"BTC/USD", "US500"} else 3
+    digits = 2 if symbol == "US500" else 3
     fmt = lambda x: f"{float(x):.{digits}f}"
     msg = EmailMessage()
     msg["Subject"] = f'{signal["action"]}: {symbol} | Strategy 2 confirmed'
