@@ -161,6 +161,10 @@ def seconds_until_next_start(now=None):
         next_start += timedelta(days=1)
     return max(1.0, (next_start - local).total_seconds())
 
+def operating_window_has_ended(now=None):
+    local = now.astimezone(IST) if now else datetime.now(IST)
+    return local.time().replace(tzinfo=None) >= clock_time(20, 0)
+
 
 def request_stop(signum, frame):
     global STOP
@@ -186,9 +190,15 @@ def main():
     was_active = False
     while not STOP:
         if not in_operating_window():
+            if operating_window_has_ended():
+                if was_active:
+                    log("OPERATING_WINDOW_CLOSED; final cycle complete, scanner process exiting")
+                else:
+                    log("OUTSIDE_OPERATING_WINDOW; scanner process exiting until next scheduled run")
+                break
             if was_active:
-                log("OPERATING_WINDOW_CLOSED; scanning paused until 05:00 IST")
-            was_active = False
+                log("OPERATING_WINDOW_CLOSED; scanner process exiting until next scheduled run")
+                break
             time.sleep(min(30.0, seconds_until_next_start()))
             next_scan = time.monotonic()
             continue
