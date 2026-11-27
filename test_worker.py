@@ -13,7 +13,7 @@ import central_worker as scanner
 class CentralScannerTests(unittest.TestCase):
     def test_exactly_three_selected_markets_and_three_strategies(self):
         self.assertEqual(scanner.MARKETS, ("XAU/USD", "XAG/USD", "US500"))
-        self.assertEqual(len(scanner.STRATEGY_MODULES), 3)
+        self.assertEqual(scanner.STRATEGY_MODULES, ("main", "strategy2"))
 
     def test_shared_feed_downloads_each_symbol_interval_once_per_cycle(self):
         calls = []
