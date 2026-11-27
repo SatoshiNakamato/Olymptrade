@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from market_data import fetch_candles
-from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
+from market_filters import entry_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
@@ -249,8 +249,6 @@ def _send_email(signal):
 
 
 def main():
-    now = datetime.now(timezone.utc)
-    in_session, why = london_session_status(now)
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
             state = json.load(f)
@@ -258,6 +256,7 @@ def main():
         state = {}
     errors = []
     for symbol in SYMBOLS:
+        now = datetime.now(timezone.utc)
         try:
             old = state.get(symbol, {})
             active = old.get("active_plan")
@@ -282,16 +281,11 @@ def main():
                 continue
 
             # Apply entry gates before downloading candles or running pandas analysis.
-            # FX/metals follow London hours; US500 follows New York hours; crypto is 24/7.
-            is_crypto = symbol.upper().startswith(("BTC/", "ETH/"))
-            if symbol == "US500":
-                market_open, market_reason = new_york_session_status(now)
-            else:
-                market_open, market_reason = in_session, why
-            if not is_crypto and not market_open:
+            market_open, market_reason = entry_session_status(symbol, now)
+            if not market_open:
                 print(f"Strategy 2 {symbol}: WAIT — {market_reason}")
                 continue
-            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}:
+            if symbol in {"XAU/USD", "XAG/USD", "US500"}:
                 ok, news_reason = usd_high_impact_news_status(now)
                 if not ok:
                     print(f"Strategy 2 {symbol}: WAIT — {news_reason}")
@@ -310,6 +304,15 @@ def main():
             if signal["action"] == "WAIT":
                 continue
             detected_at = datetime.now(timezone.utc)
+            market_open, market_reason = entry_session_status(symbol, detected_at)
+            if not market_open:
+                print(f"Strategy 2 {symbol}: entry suppressed at send time — {market_reason}")
+                continue
+            news_ok, news_reason = usd_high_impact_news_status(detected_at)
+            if not news_ok:
+                print(f"Strategy 2 {symbol}: entry suppressed at send time — {news_reason}")
+                continue
+            now = detected_at
             print(
                 f"[{detected_at.isoformat(timespec='milliseconds')}] "
                 f"Strategy 2 SIGNAL_DETECTED {symbol} {signal['action']} "
