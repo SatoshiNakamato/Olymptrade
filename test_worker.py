@@ -109,7 +109,7 @@ class CentralScannerTests(unittest.TestCase):
             (agent_dir / ".signal_state.json").write_text(json.dumps({
                 "XAU/USD": {"key": "older-agent", "sent_at": "2026-11-27T01:00:00+00:00"}
             }), encoding="utf-8")
-            with patch.object(scanner, "ROOT", root):
+            with patch.object(scanner, "ROOT", root), patch.object(scanner, "STATE_ROOT", root / ".voroa_agents"):
                 scanner.migrate_market_state()
             destination = json.loads((root / ".signal_state.json").read_text())
             self.assertEqual(destination["XAU/USD"]["key"], "central")
