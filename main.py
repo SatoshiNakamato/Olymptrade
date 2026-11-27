@@ -46,7 +46,7 @@ def _as_utc(value):
 
 
 def main():
-    symbols = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500").split(",") if s.strip()]
+    symbols = [s.strip() for s in os.getenv("SYMBOLS", "XAU/USD,XAG/USD,US500").split(",") if s.strip()]
     state, now = load_state(), datetime.now(timezone.utc)
     in_session, session_reason = london_session_status(now)
     failures = []
