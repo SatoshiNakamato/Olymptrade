@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import market_filters
-from market_filters import entry_session_status
+from market_filters import entry_session_status, strategy3_entry_session_status
 
 
 class EntrySessionStatusTests(unittest.TestCase):
@@ -19,6 +19,24 @@ class EntrySessionStatusTests(unittest.TestCase):
         self.assertTrue(entry_session_status("XAG/USD", opened)[0])
         self.assertFalse(entry_session_status("XAU/USD", closed)[0])
         self.assertFalse(entry_session_status("XAG/USD", closed)[0])
+
+    def test_strategy3_metals_are_not_limited_to_london_hours(self):
+        before_london = datetime(2026, 11, 27, 6, 16, tzinfo=timezone.utc)
+        after_london = datetime(2026, 11, 27, 20, 30, tzinfo=timezone.utc)
+        for symbol in ("XAU/USD", "XAG/USD"):
+            self.assertTrue(strategy3_entry_session_status(symbol, before_london)[0])
+            self.assertTrue(strategy3_entry_session_status(symbol, after_london)[0])
+
+    def test_strategy3_us500_still_uses_new_york_cash_session(self):
+        opened = datetime(2026, 11, 27, 14, 30, tzinfo=timezone.utc)
+        closed = datetime(2026, 11, 27, 21, 0, tzinfo=timezone.utc)
+        self.assertTrue(strategy3_entry_session_status("US500", opened)[0])
+        self.assertFalse(strategy3_entry_session_status("US500", closed)[0])
+
+    def test_strategy3_metals_are_closed_on_weekends(self):
+        saturday = datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc)
+        for symbol in ("XAU/USD", "XAG/USD"):
+            self.assertFalse(strategy3_entry_session_status(symbol, saturday)[0])
 
     def test_us500_follows_new_york_cash_session(self):
         opened = datetime(2026, 11, 27, 14, 30, tzinfo=timezone.utc)
