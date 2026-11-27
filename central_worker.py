@@ -8,7 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, time as clock_time, timedelta, timezone
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
@@ -21,6 +21,7 @@ IST = ZoneInfo("Asia/Kolkata")
 LONDON = ZoneInfo("Europe/London")
 NEW_YORK = ZoneInfo("America/New_York")
 STOP = False
+STOP_EVENT = Event()
 
 
 def log(message):
@@ -269,11 +270,14 @@ def has_active_plans():
 def request_stop(signum, frame):
     global STOP
     STOP = True
-    log(f"STOP_REQUESTED signal={signum}")
+    STOP_EVENT.set()
+    log(f"STOP_REQUESTED signal={signum} wake_requested=true")
 
 
 def main():
     global STOP
+    STOP = False
+    STOP_EVENT.clear()
     os.chdir(ROOT)
     sys.path.insert(0, str(ROOT))
     signal.signal(signal.SIGTERM, request_stop)
@@ -297,7 +301,14 @@ def main():
             if was_active:
                 log("MARKET_SESSIONS_CLOSED; scanning paused until next London or New York open")
             was_active = False
-            time.sleep(min(300.0, seconds_until_next_start()))
+            delay = min(300.0, seconds_until_next_start())
+            next_open = datetime.now(timezone.utc) + timedelta(seconds=delay)
+            log(
+                f"IDLE_WAIT reason=no_open_sessions_no_active_plans "
+                f"wait_seconds={int(delay)} next_check_utc={next_open.isoformat(timespec='seconds')}"
+            )
+            # Event.wait is interruptible: SIGTERM/SIGINT wakes the idle worker immediately.
+            STOP_EVENT.wait(delay)
             next_scan = time.monotonic()
             continue
         if not was_active:
@@ -314,7 +325,8 @@ def main():
         next_scan += SCAN_INTERVAL_SECONDS
         delay = next_scan - time.monotonic()
         if delay > 0:
-            time.sleep(delay)
+            # Keep the 60-second cadence while allowing graceful shutdown immediately.
+            STOP_EVENT.wait(delay)
         else:
             log(f"SCAN_CADENCE_OVERRUN seconds={-delay:.1f}; next cycle starts without overlap")
     log("CENTRAL_SCANNER_STOPPED")
