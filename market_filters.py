@@ -6,11 +6,13 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
+from threading import Lock
 
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 CALENDAR_CACHE_PATH = Path(os.getenv("USD_CALENDAR_CACHE_PATH", ".usd_calendar_cache.json"))
 CALENDAR_CACHE_TTL_SECONDS = 15 * 60
 CALENDAR_STALE_MAX_SECONDS = 6 * 60 * 60
+CALENDAR_LOCK = Lock()
 
 
 def london_session_status(now_utc):
@@ -115,7 +117,7 @@ def _fetch_calendar():
     )
 
 
-def usd_high_impact_news_status(now_utc):
+def _usd_high_impact_news_status_locked(now_utc):
     """Fail closed if no current or sufficiently recent USD calendar is available."""
     try:
         cached = _load_calendar_cache()
@@ -146,3 +148,9 @@ def usd_high_impact_news_status(now_utc):
         return True, f"No high-impact USD event within ±15 minutes (calendar: {source})"
     except Exception as exc:
         return False, f"Cannot verify USD news calendar; affected alerts blocked ({exc})"
+
+
+def usd_high_impact_news_status(now_utc):
+    """Serialize calendar refreshes shared by the three concurrent market tasks."""
+    with CALENDAR_LOCK:
+        return _usd_high_impact_news_status_locked(now_utc)
