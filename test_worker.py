@@ -91,7 +91,7 @@ class CentralScannerTests(unittest.TestCase):
                     "active_plan": {"action": "BUY"},
                 }
             }), encoding="utf-8")
-            with patch.object(scanner, "ROOT", root):
+            with patch.object(scanner, "ROOT", root), patch.object(scanner, "STATE_ROOT", root / ".voroa_agents"):
                 scanner.migrate_market_state()
             destination = json.loads((root / ".signal_state.json").read_text())
             self.assertEqual(destination["XAU/USD"]["key"], "old-agent-key")
@@ -143,7 +143,7 @@ class CentralScannerTests(unittest.TestCase):
             (root / ".signal_state.json").write_text(json.dumps({
                 "EUR/USD": {"active_plan": {"action": "BUY"}}
             }), encoding="utf-8")
-            with patch.object(scanner, "ROOT", root):
+            with patch.object(scanner, "ROOT", root), patch.object(scanner, "STATE_ROOT", root / ".voroa_agents"):
                 self.assertTrue(scanner.has_active_plans())
                 (agent_dir / ".strategy2_state.json").write_text(json.dumps({
                     "EUR/USD": {"active_plan": {"action": "BUY"}}
