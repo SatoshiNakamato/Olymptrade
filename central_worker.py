@@ -262,7 +262,7 @@ def run_cycle():
 
 
 def strategy3_metals_window_open(now=None):
-    """Strategy 3 scans XAU/XAG around the clock on weekdays, independent of London."""
+    """Strategy 3 scans XAU/XAG all weekday hours, independent of London."""
     utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
     return utc_now.weekday() < 5
 
@@ -322,7 +322,7 @@ def main():
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
     log(f"{WORKER_NAME}_STARTED markets={len(MARKETS)} concurrent_tasks={len(MARKETS)} strategies={len(STRATEGY_MODULES)} processes=1 alert_only=true pid={os.getpid()}")
     log("MARKETS XAU/USD,XAG/USD,US500")
-    log("OPERATING_SESSIONS S1/S2 XAU/XAG=08:00-17:00 Europe/London; S3 XAU/XAG=24/5; US500=09:30-16:00 America/New_York")
+    log("OPERATING_SESSIONS S1/S2 XAU/XAG=08:00-17:00 Europe/London; S3 XAU/XAG=24h weekdays; US500=09:30-16:00 America/New_York")
     log("TASK_MODEL one_process_three_market_threads isolated_strategy_state=true")
     log("STRATEGY_SET " + ",".join(STRATEGY_MODULES))
     log("STRATEGY_RULES_UNCHANGED shared_candles=true")
@@ -354,7 +354,7 @@ def main():
             continue
         if not was_active:
             if session_open:
-                log("SCANNING_WINDOW_OPEN; Strategy 3 metals 24/5; US500 and Strategy 1/2 retain session filters")
+                log("SCANNING_WINDOW_OPEN; Strategy 3 metals all weekday hours; US500 and Strategy 1/2 retain session filters")
             else:
                 log("ACTIVE_PLAN_MONITORING_ONLY; no new entries outside market sessions")
             was_active = True
