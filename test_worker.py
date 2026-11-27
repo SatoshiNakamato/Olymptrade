@@ -135,15 +135,20 @@ class CentralScannerTests(unittest.TestCase):
     def test_active_plan_detection_only_checks_selected_markets(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            agent_dir = root / ".voroa_agents" / "xau_usd"
+            agent_dir.mkdir(parents=True)
+            (agent_dir / ".strategy2_state.json").write_text(json.dumps({
+                "XAU/USD": {"active_plan": {"action": "SELL"}}
+            }), encoding="utf-8")
             (root / ".signal_state.json").write_text(json.dumps({
                 "EUR/USD": {"active_plan": {"action": "BUY"}}
             }), encoding="utf-8")
             with patch.object(scanner, "ROOT", root):
-                self.assertFalse(scanner.has_active_plans())
-                (root / ".strategy2_state.json").write_text(json.dumps({
-                    "XAU/USD": {"active_plan": {"action": "SELL"}}
-                }), encoding="utf-8")
                 self.assertTrue(scanner.has_active_plans())
+                (agent_dir / ".strategy2_state.json").write_text(json.dumps({
+                    "EUR/USD": {"active_plan": {"action": "BUY"}}
+                }), encoding="utf-8")
+                self.assertFalse(scanner.has_active_plans())
 
 
 if __name__ == "__main__":

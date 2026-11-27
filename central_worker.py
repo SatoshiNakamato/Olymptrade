@@ -97,24 +97,16 @@ def migrate_market_state():
 
 
 def _prepare_market_state(symbol):
-    """Give each market/strategy its own state file, seeding from the previous central files."""
+    """Seed a market's isolated files once; thereafter its files are authoritative."""
     directory = _market_state_dir(symbol)
     directory.mkdir(parents=True, exist_ok=True)
     for filename in STATE_FILES:
         local_path = directory / filename
-        local_state = _read_json(local_path)
+        if local_path.exists():
+            continue
         legacy_entry = _read_json(ROOT / filename).get(symbol)
-        current_entry = local_state.get(symbol)
-        if isinstance(legacy_entry, dict) and (
-            not isinstance(current_entry, dict)
-            or _entry_time(legacy_entry) > _entry_time(current_entry)
-        ):
-            combined = dict(current_entry or {})
-            combined.update(legacy_entry)
-            if not combined.get("active_plan") and (current_entry or {}).get("active_plan"):
-                combined["active_plan"] = current_entry["active_plan"]
-            local_state[symbol] = combined
-            _atomic_json(local_path, local_state)
+        if isinstance(legacy_entry, dict):
+            _atomic_json(local_path, {symbol: legacy_entry})
 
 
 def _shared_market_feed(original_fetch):
@@ -269,13 +261,6 @@ def has_active_plans():
     for symbol in MARKETS:
         for filename in STATE_FILES:
             entry = _read_json(_market_state_dir(symbol) / filename).get(symbol)
-            if isinstance(entry, dict) and isinstance(entry.get("active_plan"), dict):
-                return True
-    # Also honor central state during migration/first start.
-    for filename in STATE_FILES:
-        state = _read_json(ROOT / filename)
-        for symbol in MARKETS:
-            entry = state.get(symbol)
             if isinstance(entry, dict) and isinstance(entry.get("active_plan"), dict):
                 return True
     return False
