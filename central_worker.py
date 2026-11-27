@@ -172,7 +172,7 @@ def request_stop(signum, frame):
     log(f"STOP_REQUESTED signal={signum}")
 
 
-def main():
+def main(exit_after_window=False):
     global STOP
     os.chdir(ROOT)
     sys.path.insert(0, str(ROOT))
@@ -190,15 +190,15 @@ def main():
     was_active = False
     while not STOP:
         if not in_operating_window():
-            if operating_window_has_ended():
+            if operating_window_has_ended() and exit_after_window:
                 if was_active:
-                    log("OPERATING_WINDOW_CLOSED; final cycle complete, scanner process exiting")
+                    log("OPERATING_WINDOW_CLOSED; final cycle complete, cron process exiting")
                 else:
-                    log("OUTSIDE_OPERATING_WINDOW; scanner process exiting until next scheduled run")
+                    log("OUTSIDE_OPERATING_WINDOW; cron process exiting")
                 break
             if was_active:
-                log("OPERATING_WINDOW_CLOSED; scanner process exiting until next scheduled run")
-                break
+                log("OPERATING_WINDOW_CLOSED; scanning paused until 05:00 IST")
+            was_active = False
             time.sleep(min(30.0, seconds_until_next_start()))
             next_scan = time.monotonic()
             continue
