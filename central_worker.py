@@ -112,7 +112,7 @@ def _shared_market_feed(original_fetch):
 def run_cycle():
     """Run all strategies sequentially in this process with shared candle data."""
     started = time.monotonic()
-    os.environ.setdefault("SYMBOLS", ",".join(MARKETS))
+    os.environ["SYMBOLS"] = ",".join(MARKETS)
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
 
     market_data = importlib.import_module("market_data")
