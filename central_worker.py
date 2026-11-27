@@ -5,19 +5,18 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime, time as clock_time, timedelta
+from datetime import datetime, time as clock_time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
-MARKETS = (
-    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
-    "XAU/USD", "XAG/USD", "BTC/USD", "US500",
-)
+MARKETS = ("XAU/USD", "XAG/USD", "US500")
 STRATEGY_MODULES = ("main", "strategy2", "strategy3")
 STATE_FILES = (".signal_state.json", ".strategy2_state.json", ".strategy3_state.json")
 SCAN_INTERVAL_SECONDS = 60
 IST = ZoneInfo("Asia/Kolkata")
+LONDON = ZoneInfo("Europe/London")
+NEW_YORK = ZoneInfo("America/New_York")
 STOP = False
 
 
@@ -123,7 +122,7 @@ def run_cycle():
     for module in modules:
         module.fetch_candles = shared_fetch
 
-    log("CYCLE_STARTED markets=8 strategies=3 process_count=1")
+    log("CYCLE_STARTED markets=3 strategies=3 process_count=1")
     failures = []
     for name, module in zip(STRATEGY_MODULES, modules):
         if STOP:
@@ -150,16 +149,43 @@ def run_cycle():
 
 
 def in_operating_window(now=None):
-    local = now.astimezone(IST) if now else datetime.now(IST)
-    return clock_time(5, 0) <= local.time().replace(tzinfo=None) < clock_time(20, 0)
+    """True while either selected market's entry session is open."""
+    utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
+    london = utc_now.astimezone(LONDON)
+    new_york = utc_now.astimezone(NEW_YORK)
+    london_open = london.weekday() < 5 and clock_time(8, 0) <= london.time().replace(tzinfo=None) < clock_time(17, 0)
+    ny_minutes = new_york.hour * 60 + new_york.minute
+    new_york_open = new_york.weekday() < 5 and 9 * 60 + 30 <= ny_minutes < 16 * 60
+    return london_open or new_york_open
+
+
+def _next_weekday_open(now_utc, zone, hour, minute):
+    local = now_utc.astimezone(zone)
+    candidate = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate <= local:
+        candidate += timedelta(days=1)
+    while candidate.weekday() >= 5:
+        candidate += timedelta(days=1)
+    return candidate.astimezone(timezone.utc)
 
 
 def seconds_until_next_start(now=None):
-    local = (now.astimezone(IST) if now else datetime.now(IST))
-    next_start = local.replace(hour=5, minute=0, second=0, microsecond=0)
-    if local >= next_start:
-        next_start += timedelta(days=1)
-    return max(1.0, (next_start - local).total_seconds())
+    utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
+    london_open = _next_weekday_open(utc_now, LONDON, 8, 0)
+    new_york_open = _next_weekday_open(utc_now, NEW_YORK, 9, 30)
+    next_open = min(london_open, new_york_open)
+    return max(1.0, (next_open - utc_now).total_seconds())
+
+
+def has_active_plans():
+    """Keep checking only selected markets when an existing plan needs monitoring."""
+    for filename in STATE_FILES:
+        state = _read_json(ROOT / filename)
+        for symbol in MARKETS:
+            entry = state.get(symbol)
+            if isinstance(entry, dict) and isinstance(entry.get("active_plan"), dict):
+                return True
+    return False
 
 def request_stop(signum, frame):
     global STOP
@@ -176,26 +202,32 @@ def main():
 
     os.environ.setdefault("SYMBOLS", ",".join(MARKETS))
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
-    log("CENTRAL_SCANNER_STARTED markets=8 strategies=3 processes=1 alert_only=true")
-    log("OPERATING_WINDOW 05:00-20:00 Asia/Kolkata")
+    log("CENTRAL_SCANNER_STARTED markets=3 strategies=3 processes=1 alert_only=true")
+    log("MARKETS XAU/USD,XAG/USD,US500")
+    log("OPERATING_SESSIONS XAU/XAG=08:00-17:00 Europe/London US500=09:30-16:00 America/New_York")
     log("STRATEGY_RULES_UNCHANGED shared_candles=true")
 
     migrate_market_state()
     next_scan = time.monotonic()
     was_active = False
     while not STOP:
-        if not in_operating_window():
+        session_open = in_operating_window()
+        active_plans = has_active_plans()
+        if not session_open and not active_plans:
             if was_active:
-                log("OPERATING_WINDOW_CLOSED; scanning paused until 05:00 IST")
+                log("MARKET_SESSIONS_CLOSED; scanning paused until next London or New York open")
             was_active = False
-            # Stay alive as a Background Worker, but wake only every five minutes
-            # to check the clock and respond to shutdown signals.
+            # Sleep while neither entry session is open and no selected-market plan
+            # needs monitoring. Recheck periodically and remain responsive to shutdown.
             time.sleep(min(300.0, seconds_until_next_start()))
             next_scan = time.monotonic()
             continue
 
         if not was_active:
-            log("OPERATING_WINDOW_OPEN; scanning all markets")
+            if session_open:
+                log("MARKET_SESSION_OPEN; scanning XAU/USD,XAG/USD,US500")
+            else:
+                log("ACTIVE_PLAN_MONITORING_ONLY; no new entries outside market sessions")
             was_active = True
             next_scan = time.monotonic()
 
