@@ -17,8 +17,8 @@ ROOT = Path(__file__).resolve().parent
 STATE_ROOT = ROOT / ".voroa_agents"
 WORKER_NAME = "CENTRAL_SCANNER"
 MARKETS = ALLOWED_SYMBOLS
-STRATEGY_MODULES = ("main", "strategy2")
-STATE_FILES = (".signal_state.json", ".strategy2_state.json")
+STRATEGY_MODULES = ("main", "strategy2", "strategy3")
+STATE_FILES = (".signal_state.json", ".strategy2_state.json", ".strategy3_state.json")
 SCAN_INTERVAL_SECONDS = 60
 MARKET_TASK_WARNING_SECONDS = 240
 IST = ZoneInfo("Asia/Kolkata")
@@ -72,6 +72,32 @@ def _entry_time(entry):
         return parsed.replace(tzinfo=IST) if parsed.tzinfo is None else parsed
     except (TypeError, ValueError):
         return datetime.min.replace(tzinfo=IST)
+
+
+def migrate_dedicated_strategy3_state():
+    """Merge state from the former standalone Strategy 3 worker without deleting it."""
+    source_root = ROOT / ".voroa_strategy3"
+    if not source_root.is_dir():
+        return
+    for symbol in MARKETS:
+        source = source_root / _slug(symbol) / ".strategy3_state.json"
+        incoming = _read_json(source).get(symbol)
+        if not isinstance(incoming, dict):
+            continue
+        destination = _market_state_dir(symbol) / ".strategy3_state.json"
+        current = _read_json(destination).get(symbol)
+        if not isinstance(current, dict):
+            merged = dict(incoming)
+        else:
+            newer = incoming if _entry_time(incoming) >= _entry_time(current) else current
+            merged = dict(current)
+            merged.update(newer)
+            if not merged.get("active_plan"):
+                active = current.get("active_plan") or incoming.get("active_plan")
+                if active:
+                    merged["active_plan"] = active
+        _atomic_json(destination, {symbol: merged})
+        log(f"STRATEGY3_STATE_MERGED market={symbol} source={source}")
 
 
 def migrate_market_state():
@@ -294,6 +320,7 @@ def main():
     log("STRATEGY_SET " + ",".join(STRATEGY_MODULES))
     log("STRATEGY_RULES_UNCHANGED shared_candles=true")
 
+    migrate_dedicated_strategy3_state()
     migrate_market_state()
     for symbol in MARKETS:
         _prepare_market_state(symbol)
