@@ -75,6 +75,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
+      - name: Test stale and future market candle rejection
+        run: python -m unittest -v test_market_data.py
       - name: Test single-process central scanner, shared market feed and state migration
         run: python -m unittest -v test_worker.py
       - name: Test atomic scanner state and market entry filters
