@@ -161,7 +161,7 @@ def evaluate_strategy3(raw5, now, symbol, raw1h=None):
 
 
 def _fmt(symbol, value):
-    digits = 3 if symbol == "USD/JPY" else 5 if symbol in {"EUR/USD", "GBP/USD", "AUD/USD"} else 2 if symbol in {"BTC/USD", "US500"} else 3
+    digits = 2 if symbol == "US500" else 3
     return f"{float(value):.{digits}f}"
 
 
