@@ -130,7 +130,7 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
-          SYMBOLS: EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500
+          SYMBOLS: XAU/USD,XAG/USD,US500
         run: python main.py
       - name: Scan markets with Strategy 2 and email confirmed signals
         id: strategy2_scan
@@ -140,9 +140,9 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
-          SYMBOLS: EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500
+          SYMBOLS: XAU/USD,XAG/USD,US500
         run: python strategy2.py
-      - name: Scan eight shared markets with Strategy 3 and email confirmed signals
+      - name: Scan three selected markets with Strategy 3 and email confirmed signals
         id: strategy3_scan
         continue-on-error: true
         if: ${{ (github.event_name == 'workflow_dispatch' && !inputs.run_pipeline_tests_only && !inputs.send_test_email) }}
@@ -150,7 +150,7 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERT_TO: Ineed2pnaga@gmail.com
-          SYMBOLS: EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500
+          SYMBOLS: XAU/USD,XAG/USD,US500
         run: python strategy3.py
       - name: Report scanner failures after all strategies have run
         if: always()
