@@ -68,7 +68,7 @@ class StrategyStateTests(unittest.TestCase):
                     "json": json, "os": os, "tempfile": tempfile,
                     "datetime": datetime, "timedelta": timedelta,
                     "timezone": timezone, "STATE_PATH": str(Path(tmp) / "state.json"),
-                    "SYMBOLS": ["EUR/USD"],
+                    "select_symbols": lambda requested=None: ["XAU/USD"],
                     "entry_session_status": lambda symbol, now: (False, "London session closed"),
                     "fetch_candles": fetch,
                     "usd_high_impact_news_status": news,
