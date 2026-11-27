@@ -10,11 +10,17 @@ import central_worker as scanner
 
 
 class Strategy3WorkerTests(unittest.TestCase):
-    def test_worker_runs_only_strategy3_with_its_own_state_root(self):
-        self.assertEqual(scanner.STRATEGY_MODULES, ("strategy3",))
-        self.assertEqual(scanner.STATE_FILES, (".strategy3_state.json",))
-        self.assertEqual(scanner.STATE_ROOT, scanner.ROOT / ".voroa_strategy3")
-        self.assertEqual(scanner.MARKETS, ("XAU/USD", "XAG/USD", "US500"))
+    def test_worker_configuration_is_strategy3_only(self):
+        old = (scanner.STRATEGY_MODULES, scanner.STATE_FILES, scanner.STATE_ROOT, scanner.WORKER_NAME)
+        try:
+            worker.configure_worker()
+            self.assertEqual(scanner.STRATEGY_MODULES, ("strategy3",))
+            self.assertEqual(scanner.STATE_FILES, (".strategy3_state.json",))
+            self.assertEqual(scanner.STATE_ROOT, scanner.ROOT / ".voroa_strategy3")
+            self.assertEqual(scanner.WORKER_NAME, "STRATEGY3_SCANNER")
+            self.assertEqual(scanner.MARKETS, ("XAU/USD", "XAG/USD", "US500"))
+        finally:
+            scanner.STRATEGY_MODULES, scanner.STATE_FILES, scanner.STATE_ROOT, scanner.WORKER_NAME = old
 
     def test_imports_legacy_active_plan_without_overwriting_existing_state(self):
         with tempfile.TemporaryDirectory() as tmp:
