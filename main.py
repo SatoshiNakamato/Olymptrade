@@ -10,6 +10,7 @@ from market_filters import entry_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert
 from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
+from watchlist import select_symbols
 
 STATE_PATH = ".signal_state.json"
 
@@ -46,8 +47,11 @@ def _as_utc(value):
 
 
 def main(symbols=None):
-    if symbols is None:
-        symbols = [s.strip() for s in os.getenv("SYMBOLS", "XAU/USD,XAG/USD,US500").split(",") if s.strip()]
+    requested = symbols if symbols is not None else os.getenv("SYMBOLS")
+    symbols = select_symbols(requested)
+    if not symbols:
+        print("No approved markets selected; scanner cycle skipped.", flush=True)
+        return
     state = load_state()
     failures = []
 
