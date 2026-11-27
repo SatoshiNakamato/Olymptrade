@@ -1,6 +1,6 @@
-# EUR/USD + Gold Smart-Money-Concept Email Alerts
+# XAU/USD, XAG/USD and US500 Market Signal Email Alerts
 
-Alert-only market analysis for EUR/USD, gold (XAU/USD), silver (XAG/USD), and BTC/USD. The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
+Alert-only market analysis for exactly three approved markets: gold (XAU/USD), silver (XAG/USD), and US500. EUR/USD, GBP/USD, USD/JPY, AUD/USD, BTC/USD and all other markets are excluded by a shared code-level whitelist. The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
 
 ## Strategy 1 — 1h structure + 15m BOS zone + 5m sweep/MSS
 
@@ -10,9 +10,9 @@ The original scanner evaluates completed candles and requires aligned 1-hour swi
 
 The second scanner looks for 15-minute trend alignment, a return to a displacement-origin zone, and a completed lower-timeframe market-structure shift. It calculates a swing-based stop and 2R target. It can use 1-minute confirmation when the 5-minute confirmation is too far from the zone.
 
-## Strategy 3 — four-market 1h/15m trend pullback continuation
+## Strategy 3 — three-market 1h/15m trend pullback continuation
 
-The third scanner independently evaluates **EUR/USD, Gold (XAU/USD), Silver (XAG/USD), and Bitcoin (BTC/USD)** every workflow run. Each symbol has its own signal state and duplicate/cooldown protection.
+The third scanner evaluates only **XAU/USD, XAG/USD, and US500**. Each selected market has its own signal state and duplicate/cooldown protection.
 
 1. 1-hour EMA20/EMA50 and price must agree on direction.
 2. 15-minute EMA20/EMA50 and price must agree with the 1-hour trend.
@@ -22,7 +22,7 @@ The third scanner independently evaluates **EUR/USD, Gold (XAU/USD), Silver (XAG
 6. Stop is derived from the recent 5-minute swing and ATR; TP1 is 1R and TP2 is 2R.
 7. Each alert expires at the next 5-minute candle close. Recheck the live quote and do not enter on an expired alert.
 
-The rules are two-sided and can produce BUY, SELL, or WAIT separately for each market. BTC is scanned 24/7; EUR/USD, gold, and silver use the London-session filter. USD high-impact news blocks new alerts for all four USD-quoted markets. No fixed price levels are hard-coded.
+The rules are two-sided and can produce BUY, SELL, or WAIT separately for each selected market. XAU/USD and XAG/USD use the London-session filter; US500 uses the New York cash-session filter. USD high-impact news blocks new alerts for all three selected markets. No fixed price levels are hard-coded.
 
 ## Gold and silver entry plan
 
@@ -43,7 +43,7 @@ Rupee calculations are estimates based on percentage price movement and exclude 
 
 The bot does not connect to Olymptrade, cannot see your actual fills, selected multiplier, open positions or realized P/L, and cannot place, change or close orders. It never blocks a valid strategy signal because of the optional sizing suggestion. Use a demo account for forward testing and verify every quote, spread, entry window, stop and target.
 
-Holding/review windows are estimates based on ATR and target distance, not guaranteed durations. GitHub Actions runs every 5 minutes on a best-effort schedule; it is not real-time and can miss intrabar setups. No strategy promises a fixed number of signals per day; strict filters may correctly produce no alert on some days.
+Holding/review windows are estimates based on ATR and target distance, not guaranteed durations. GitHub Actions is a separate manual/CI workflow, not the Voroa real-time worker; its scans are not real-time and can miss intrabar setups. No strategy promises a fixed number of signals per day; strict filters may correctly produce no alert on some days.
 
 ## Automation and data
 
