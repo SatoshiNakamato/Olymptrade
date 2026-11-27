@@ -48,10 +48,11 @@ Holding/review windows are estimates based on ATR and target distance, not guara
 
 ## Automation and data
 
-- Voroa uses two independent Background Workers: `python worker.py` runs Strategies 1 and 2; `python strategy3_worker.py` runs Strategy 3 only.
-- Each worker uses one Python process and three concurrent market tasks for XAU/USD, XAG/USD and US500. The Strategy 3 worker has its own `.voroa_strategy3` state directory; the Strategies 1+2 worker uses `.voroa_agents`.
-- Both workers enforce the same London entry session for gold/silver and New York cash entry session for US500. Existing plans remain monitored outside entry sessions.
-- Strategy 3's dedicated worker imports any accessible legacy Strategy 3 per-market state from `.voroa_agents` or `.strategy3_state.json` on first start, without deleting the source.
+- Voroa uses one Background Worker: `python worker.py` runs Strategies 1, 2 and 3 in one Python process.
+- The worker runs three concurrent market tasks for XAU/USD, XAG/USD and US500. Each market task evaluates the three strategies in sequence and shares the per-cycle candle cache, reducing duplicate downloads and avoiding three separate worker processes.
+- All three strategies keep separate state files inside each market directory under `.voroa_agents`: `.signal_state.json`, `.strategy2_state.json` and `.strategy3_state.json`.
+- The combined worker imports existing Strategy 3 state from the former `.voroa_strategy3` directory when available, merges it without deleting the source, and continues monitoring active plans outside entry sessions.
+- XAU/USD and XAG/USD use the London entry session; US500 uses the New York cash entry session. Do not run `strategy3_worker.py` at the same time as `worker.py`, or Strategy 3 could be scanned twice.
 - `watchlist.py` is the authoritative whitelist. Environment-variable overrides and direct strategy calls cannot add markets outside XAU/USD, XAG/USD, and US500.
 - The worker scans during the selected markets' London/New York sessions and pauses when both sessions are closed and no active plans need monitoring.
 - The shared Biquote adapter supplies completed 1-minute, 5-minute and 1-hour candles; 1-minute data is requested only by Strategy 2 when its existing fallback condition is met.
