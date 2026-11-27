@@ -1,6 +1,6 @@
 # XAU/USD, XAG/USD and US500 Market Signal Email Alerts
 
-Alert-only market analysis for exactly three approved markets: gold (XAU/USD), silver (XAG/USD), and US500. EUR/USD, GBP/USD, USD/JPY, AUD/USD, BTC/USD and all other markets are excluded by a shared code-level whitelist. The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
+Alert-only market analysis for exactly three approved markets: gold (XAU/USD), silver (XAG/USD), and US500. All other markets are rejected by a shared code-level whitelist. The bot does not connect to Olymptrade, place orders, or guarantee profitable trades.
 
 ## Strategy 1 — 1h structure + 15m BOS zone + 5m sweep/MSS
 
