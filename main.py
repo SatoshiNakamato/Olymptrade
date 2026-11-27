@@ -47,17 +47,17 @@ def _as_utc(value):
 
 def main():
     symbols = [s.strip() for s in os.getenv("SYMBOLS", "XAU/USD,XAG/USD,US500").split(",") if s.strip()]
-    state, now = load_state(), datetime.now(timezone.utc)
-    in_session, session_reason = london_session_status(now)
+    state = load_state()
     failures = []
 
     for symbol in symbols:
+        now = datetime.now(timezone.utc)
+        in_session, session_reason = london_session_status(now)
         try:
-            candles = fetch_candles(symbol, interval="5min")
-            hourly = fetch_candles(symbol, interval="1hour")
             previous = state.get(symbol, {})
             plan = previous.get("active_plan")
             if plan:
+                candles = fetch_candles(symbol, interval="5min")
                 events = monitor_and_notify(candles, plan, now, symbol)
                 for event in events:
                     if event["type"] == "tp1":
@@ -87,12 +87,15 @@ def main():
             if not is_crypto and not market_open:
                 print(f"{symbol} new entries skipped: {market_reason}")
                 continue
-            if symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}:
+            if symbol in {"XAU/USD", "XAG/USD", "US500"}:
                 news_ok, news_reason = usd_high_impact_news_status(now)
                 if not news_ok:
                     print(f"{symbol} new entry skipped: {news_reason}")
                     continue
 
+            # Fetch candles only after entry-session/news gates pass.
+            candles = fetch_candles(symbol, interval="5min")
+            hourly = fetch_candles(symbol, interval="1hour")
             signal = evaluate(symbol, candles, now, raw_1h=hourly)
             print(json.dumps(signal, default=str))
             if signal["action"] == "WAIT":
