@@ -1,6 +1,6 @@
-"""Strategy 3: multi-market trend pullback continuation alerts.
+"""Strategy 3: three-market trend pullback continuation alerts.
 
-Scans the shared FX, metals, crypto, and US500 watchlist.
+Scans only XAU/USD, XAG/USD, and US500.
 Alert-only: never places broker orders.
 """
 import json
@@ -39,7 +39,7 @@ def _save_state(state):
 
 def _requires_usd_news_filter(symbol):
     """Return whether this market is gated by the USD high-impact event calendar."""
-    return symbol in {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "XAU/USD", "XAG/USD", "US500"}
+    return symbol in {"XAU/USD", "XAG/USD", "US500"}
 
 
 def _closed(raw, minutes, now):
