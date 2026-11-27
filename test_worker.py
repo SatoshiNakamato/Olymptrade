@@ -145,17 +145,25 @@ class CentralScannerTests(unittest.TestCase):
         london_closed_ny_open = datetime.fromisoformat("2026-11-27T17:00:00+00:00")
         ny_still_open = datetime.fromisoformat("2026-11-27T20:59:00+00:00")
         both_closed = datetime.fromisoformat("2026-11-27T21:00:00+00:00")
-        self.assertFalse(scanner.in_operating_window(before_london))
+        self.assertTrue(scanner.in_operating_window(before_london))
         self.assertTrue(scanner.in_operating_window(london_open))
         self.assertTrue(scanner.in_operating_window(london_closed_ny_open))
         self.assertTrue(scanner.in_operating_window(ny_still_open))
-        self.assertFalse(scanner.in_operating_window(both_closed))
+        self.assertTrue(scanner.in_operating_window(both_closed))
+
+    def test_strategy3_metals_keep_weekday_scanner_awake_outside_london(self):
+        friday_early = datetime.fromisoformat("2026-11-27T06:16:00+00:00")
+        friday_evening = datetime.fromisoformat("2026-11-27T20:30:00+00:00")
+        saturday = datetime.fromisoformat("2026-11-28T12:00:00+00:00")
+        self.assertTrue(scanner.strategy3_metals_window_open(friday_early))
+        self.assertTrue(scanner.strategy3_metals_window_open(friday_evening))
+        self.assertFalse(scanner.strategy3_metals_window_open(saturday))
 
     def test_next_start_uses_next_london_or_new_york_open_and_skips_weekends(self):
         before_london = datetime.fromisoformat("2026-11-27T07:59:00+00:00")
         after_both_close = datetime.fromisoformat("2026-11-27T21:00:00+00:00")
         self.assertEqual(scanner.seconds_until_next_start(before_london), 60)
-        self.assertEqual(scanner.seconds_until_next_start(after_both_close), 59 * 3600)
+        self.assertEqual(scanner.seconds_until_next_start(after_both_close), 51 * 3600)
 
     def test_active_plan_detection_only_checks_selected_markets(self):
         with tempfile.TemporaryDirectory() as tmp:
