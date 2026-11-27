@@ -31,8 +31,15 @@ class CentralScannerTests(unittest.TestCase):
         self.assertEqual(counts, {"hits": 1, "misses": 2})
         self.assertEqual(len(cache), 2)
 
-    def test_all_three_strategy_mains_run_in_one_process_and_share_feed(self):
-        calls = []
+    def test_three_market_tasks_run_concurrently_and_share_feed(self):
+        import sys
+        import threading
+        from unittest.mock import patch
+
+        active = 0
+        maximum_active = 0
+        active_lock = threading.Lock()
+        barrier = threading.Barrier(3)
         feed_calls = []
 
         class FakeFrame:
@@ -46,27 +53,28 @@ class CentralScannerTests(unittest.TestCase):
             return frame
 
         fake_market_data = SimpleNamespace(fetch_candles=original_fetch)
-        fake_modules = {}
-        for name in scanner.STRATEGY_MODULES:
-            def make_main(strategy_name):
-                def run():
-                    calls.append(strategy_name)
-                    module = fake_modules[strategy_name]
-                    module.fetch_candles("EUR/USD", interval="5min")
-                return run
-            fake_modules[name] = SimpleNamespace(main=make_main(name), fetch_candles=None)
+        task_calls = []
 
-        def importer(name):
-            if name == "market_data":
-                return fake_market_data
-            return fake_modules[name]
+        def fake_task(symbol, shared_fetch):
+            nonlocal active, maximum_active
+            with active_lock:
+                active += 1
+                maximum_active = max(maximum_active, active)
+            barrier.wait(timeout=3)
+            shared_fetch(symbol, interval="5min")
+            task_calls.append(symbol)
+            with active_lock:
+                active -= 1
+            return True
 
-        with patch.object(scanner.importlib, "import_module", side_effect=importer):
+        with patch.dict(sys.modules, {"market_data": fake_market_data}), \\
+             patch.object(scanner, "_run_market_task", side_effect=fake_task), \\
+             patch.object(scanner, "_prepare_market_state"):
             self.assertTrue(scanner.run_cycle())
 
-        self.assertEqual(calls, list(scanner.STRATEGY_MODULES))
-        self.assertEqual(len(feed_calls), 1)
-        self.assertEqual(fake_market_data.fetch_candles, original_fetch)
+        self.assertEqual(set(task_calls), set(scanner.MARKETS))
+        self.assertEqual(maximum_active, 3)
+        self.assertEqual(len(feed_calls), 3)
 
     def test_previous_per_market_state_is_migrated_without_deleting_source(self):
         with tempfile.TemporaryDirectory() as tmp:

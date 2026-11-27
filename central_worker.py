@@ -103,11 +103,18 @@ def _prepare_market_state(symbol):
     for filename in STATE_FILES:
         local_path = directory / filename
         local_state = _read_json(local_path)
-        if symbol not in local_state:
-            legacy_entry = _read_json(ROOT / filename).get(symbol)
-            if isinstance(legacy_entry, dict):
-                local_state[symbol] = legacy_entry
-                _atomic_json(local_path, local_state)
+        legacy_entry = _read_json(ROOT / filename).get(symbol)
+        current_entry = local_state.get(symbol)
+        if isinstance(legacy_entry, dict) and (
+            not isinstance(current_entry, dict)
+            or _entry_time(legacy_entry) > _entry_time(current_entry)
+        ):
+            combined = dict(current_entry or {})
+            combined.update(legacy_entry)
+            if not combined.get("active_plan") and (current_entry or {}).get("active_plan"):
+                combined["active_plan"] = current_entry["active_plan"]
+            local_state[symbol] = combined
+            _atomic_json(local_path, local_state)
 
 
 def _shared_market_feed(original_fetch):
@@ -221,8 +228,7 @@ def run_cycle():
                 log(f"MARKET_TASK_CRASH {symbol} {type(exc).__name__}: {exc}")
 
     elapsed = time.monotonic() - started
-    with counts_guard(counts):
-        hits, misses = counts["hits"], counts["misses"]
+    hits, misses = counts["hits"], counts["misses"]
     log(
         f"CYCLE_FINISHED duration={elapsed:.1f}s market_data_cache_hits={hits} "
         f"market_data_fetches={misses} cached_frames={len(cache)} "
@@ -230,17 +236,6 @@ def run_cycle():
     )
     return not failures
 
-
-class counts_guard:
-    """Small context manager used only to take a consistent cache-counter snapshot."""
-    def __init__(self, counts):
-        self.counts = counts
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
 
 
 def in_operating_window(now=None):
