@@ -16,6 +16,7 @@ from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
 from trade_advisor import recommend_trade, format_trade_advice
+from watchlist import select_symbols
 
 STATE_PATH = ".strategy3_state.json"
 
@@ -34,8 +35,6 @@ def _save_state(state):
         if temp_name and os.path.exists(temp_name):
             os.unlink(temp_name)
 
-
-DEFAULT_SYMBOLS = ["XAU/USD", "XAG/USD", "US500"]
 
 
 def _requires_usd_news_filter(symbol):
@@ -207,9 +206,10 @@ def _send_email(signal):
 
 
 def main(symbols=None):
-    if symbols is None:
-        symbols = [s.strip().upper() for s in os.environ.get(
-            "SYMBOLS", ",".join(DEFAULT_SYMBOLS)).split(",") if s.strip()]
+    symbols = select_symbols(symbols if symbols is not None else os.getenv("SYMBOLS"))
+    if not symbols:
+        print("No approved markets selected; Strategy 3 cycle skipped.", flush=True)
+        return
     state = {}
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
