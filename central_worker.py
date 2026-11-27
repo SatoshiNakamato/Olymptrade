@@ -151,14 +151,14 @@ def run_cycle():
 
 def in_operating_window(now=None):
     local = now.astimezone(IST) if now else datetime.now(IST)
-    return clock_time(0, 0) <= local.time().replace(tzinfo=None) < clock_time(20, 0)
+    return clock_time(5, 0) <= local.time().replace(tzinfo=None) < clock_time(20, 0)
 
 
 def seconds_until_next_start(now=None):
     local = (now.astimezone(IST) if now else datetime.now(IST))
-    next_start = (local + timedelta(days=1)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
+    next_start = local.replace(hour=5, minute=0, second=0, microsecond=0)
+    if local >= next_start:
+        next_start += timedelta(days=1)
     return max(1.0, (next_start - local).total_seconds())
 
 
@@ -178,7 +178,7 @@ def main():
     os.environ.setdefault("SYMBOLS", ",".join(MARKETS))
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
     log("CENTRAL_SCANNER_STARTED markets=8 strategies=3 processes=1 alert_only=true")
-    log("OPERATING_WINDOW 00:00-20:00 Asia/Kolkata")
+    log("OPERATING_WINDOW 05:00-20:00 Asia/Kolkata")
     log("STRATEGY_RULES_UNCHANGED shared_candles=true")
 
     migrate_market_state()
@@ -187,7 +187,7 @@ def main():
     while not STOP:
         if not in_operating_window():
             if was_active:
-                log("OPERATING_WINDOW_CLOSED; scanning paused until 00:00 IST")
+                log("OPERATING_WINDOW_CLOSED; scanning paused until 05:00 IST")
             was_active = False
             time.sleep(min(30.0, seconds_until_next_start()))
             next_scan = time.monotonic()
