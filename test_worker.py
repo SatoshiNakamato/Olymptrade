@@ -11,9 +11,10 @@ import central_worker as scanner
 
 
 class CentralScannerTests(unittest.TestCase):
-    def test_exactly_three_selected_markets_and_three_strategies(self):
+    def test_exactly_three_selected_markets_and_all_three_strategies(self):
         self.assertEqual(scanner.MARKETS, ("XAU/USD", "XAG/USD", "US500"))
-        self.assertEqual(scanner.STRATEGY_MODULES, ("main", "strategy2"))
+        self.assertEqual(scanner.STRATEGY_MODULES, ("main", "strategy2", "strategy3"))
+        self.assertEqual(scanner.STATE_FILES, (".signal_state.json", ".strategy2_state.json", ".strategy3_state.json"))
 
     def test_shared_feed_downloads_each_symbol_interval_once_per_cycle(self):
         calls = []
@@ -77,6 +78,30 @@ class CentralScannerTests(unittest.TestCase):
         self.assertEqual(set(task_calls), set(scanner.MARKETS))
         self.assertEqual(maximum_active, 3)
         self.assertEqual(len(feed_calls), 3)
+
+    def test_dedicated_strategy3_state_is_merged_into_combined_worker_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            symbol = "XAU/USD"
+            source_dir = root / ".voroa_strategy3" / "xau_usd"
+            source_dir.mkdir(parents=True)
+            source = source_dir / ".strategy3_state.json"
+            source.write_text(json.dumps({
+                symbol: {
+                    "key": "dedicated",
+                    "sent_at": "2026-11-27T02:00:00+00:00",
+                    "active_plan": {"action": "BUY"},
+                }
+            }), encoding="utf-8")
+            target_dir = root / ".voroa_agents" / "xau_usd"
+            target_dir.mkdir(parents=True)
+            with patch.object(scanner, "ROOT", root), patch.object(scanner, "STATE_ROOT", root / ".voroa_agents"), patch.object(scanner, "log"):
+                scanner.migrate_dedicated_strategy3_state()
+            target = target_dir / ".strategy3_state.json"
+            saved = json.loads(target.read_text(encoding="utf-8"))[symbol]
+            self.assertEqual(saved["key"], "dedicated")
+            self.assertEqual(saved["active_plan"]["action"], "BUY")
+            self.assertTrue(source.exists())
 
     def test_previous_per_market_state_is_migrated_without_deleting_source(self):
         with tempfile.TemporaryDirectory() as tmp:
