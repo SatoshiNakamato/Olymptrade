@@ -13,7 +13,7 @@ from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
 from trade_advisor import recommend_trade, format_trade_advice
 
 STATE_PATH = ".strategy2_state.json"
-SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "EUR/USD,GBP/USD,USD/JPY,AUD/USD,XAU/USD,XAG/USD,BTC/USD,US500").split(",") if s.strip()]
+SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "XAU/USD,XAG/USD,US500").split(",") if s.strip()]
 
 
 def _save_state(state):
