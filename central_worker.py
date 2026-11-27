@@ -202,8 +202,8 @@ def main():
         if STOP:
             break
         next_scan += SCAN_INTERVAL_SECONDS
-        delay = max(0.0, next_scan - time.monotonic())
-        if delay:
+        delay = next_scan - time.monotonic()
+        if delay > 0:
             time.sleep(delay)
         else:
             log(f"SCAN_CADENCE_OVERRUN seconds={-delay:.1f}; next cycle starts without overlap")
