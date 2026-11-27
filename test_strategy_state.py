@@ -83,13 +83,13 @@ class StrategyStateTests(unittest.TestCase):
             news.assert_not_called()
             self.assertEqual(json.loads((Path(tmp) / "state.json").read_text()), {})
 
-    def test_strategy3_btc_is_not_blocked_by_usd_news_calendar(self):
+    def test_strategy3_news_filter_matches_only_approved_markets(self):
         scope = load_functions("strategy3.py", ["_requires_usd_news_filter"])
         requires_filter = scope["_requires_usd_news_filter"]
-        self.assertFalse(requires_filter("BTC/USD"))
         self.assertTrue(requires_filter("XAU/USD"))
-        self.assertTrue(requires_filter("EUR/USD"))
+        self.assertTrue(requires_filter("XAG/USD"))
         self.assertTrue(requires_filter("US500"))
+        self.assertFalse(requires_filter("OTHER/PAIR"))
 
 
 if __name__ == "__main__":
