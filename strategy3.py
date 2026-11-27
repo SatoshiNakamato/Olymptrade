@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from market_data import fetch_candles
-from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
+from market_filters import entry_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
@@ -227,12 +227,7 @@ def main():
             # Do not fetch or analyze a market that is outside its entry session.
             # Existing plans remain eligible for monitoring outside entry sessions.
             if not active:
-                if symbol == "US500":
-                    in_session, reason = new_york_session_status(now)
-                elif symbol != "BTC/USD":
-                    in_session, reason = london_session_status(now)
-                else:
-                    in_session, reason = True, "Crypto trades 24/7"
+                in_session, reason = entry_session_status(symbol, now)
                 if not in_session:
                     print(f"Strategy 3 {symbol}: WAIT — {reason}")
                     continue
@@ -274,6 +269,15 @@ def main():
             continue
 
         detected_at = datetime.now(timezone.utc)
+        in_session, reason = entry_session_status(symbol, detected_at)
+        if not in_session:
+            print(f"Strategy 3 {symbol}: entry suppressed at send time — {reason}")
+            continue
+        news_ok, news_reason = usd_high_impact_news_status(detected_at)
+        if not news_ok:
+            print(f"Strategy 3 {symbol}: entry suppressed at send time — {news_reason}")
+            continue
+        now = detected_at
         print(
             f"[{detected_at.isoformat(timespec='milliseconds')}] "
             f"Strategy 3 SIGNAL_DETECTED {symbol} {signal['action']} "
