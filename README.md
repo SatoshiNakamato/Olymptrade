@@ -47,9 +47,11 @@ Holding/review windows are estimates based on ATR and target distance, not guara
 
 ## Automation and data
 
-- GitHub Actions checks every 5 minutes (best-effort).
-- Twelve Data supplies 5-minute candles; the scanners aggregate completed 15-minute and 1-hour candles locally.
-- Confirm your Twelve Data plan supports EUR/USD, XAU/USD and sufficient historical 5-minute data.
+- Voroa runs one central Python worker (`python worker.py`) for all eight markets and all three strategies.
+- The three strategy modules run in one process and share each market's downloaded candle frames during a scan cycle.
+- The worker scans from 00:00 to 20:00 India Standard Time (Asia/Kolkata) and pauses outside that window.
+- The shared Biquote adapter supplies completed 1-minute, 5-minute and 1-hour candles; 1-minute data is requested only by Strategy 2 when its existing fallback condition is met.
+- The central worker preserves the three existing strategy state files and migrates per-market state from the previous `.voroa_agents` directories without deleting the originals.
 
 ## Required GitHub Actions secrets
 
