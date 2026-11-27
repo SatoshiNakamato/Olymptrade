@@ -7,6 +7,10 @@ from market_data import MarketDataError, _validate_freshness
 
 
 class MarketDataFreshnessTests(unittest.TestCase):
+    def test_only_selected_markets_are_supported(self):
+        from market_data import SYMBOL_MAP
+        self.assertEqual(set(SYMBOL_MAP), {"XAU/USD", "XAG/USD", "US500"})
+
     def setUp(self):
         self.now = pd.Timestamp("2026-11-27T12:10:00Z")
 
