@@ -18,7 +18,7 @@ class CentralWorkerTests(unittest.TestCase):
         def fetch(symbol, outputsize=1600, interval="5min"):
             calls.append((symbol, outputsize, interval))
             time.sleep(0.03)
-            return {"rows": [1, 2, 3]}
+            return 123
 
         shared, cache, counts = _shared_market_feed(fetch)
         results = []
