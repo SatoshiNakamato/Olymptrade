@@ -22,7 +22,7 @@ The third scanner evaluates only **XAU/USD, XAG/USD, and US500**. Each selected 
 6. Stop is derived from the recent 5-minute swing and ATR; TP1 is 1R and TP2 is 2R.
 7. Each alert expires at the next 5-minute candle close. Recheck the live quote and do not enter on an expired alert.
 
-The rules are two-sided and can produce BUY, SELL, or WAIT separately for each selected market. XAU/USD and XAG/USD use the London-session filter; US500 uses the New York cash-session filter. USD high-impact news blocks new alerts for all three selected markets. No fixed price levels are hard-coded.
+The rules are two-sided and can produce BUY, SELL, or WAIT separately for each selected market. Strategy 3 scans XAU/USD and XAG/USD throughout weekdays without a London-hours restriction; US500 remains limited to the New York cash session. USD high-impact news blocks new alerts for all three selected markets. No fixed price levels are hard-coded.
 
 ## Gold and silver entry plan
 
@@ -30,8 +30,9 @@ See [`PRECIOUS_METALS_STRATEGY.md`](PRECIOUS_METALS_STRATEGY.md) for the separat
 
 ## Session and news filters
 
-- XAU/USD and XAG/USD entries are permitted only during 08:00–17:00 Europe/London time, Monday to Friday.
-- US500 entries are permitted only during 09:30–16:00 America/New_York time, Monday to Friday.
+- Strategies 1 and 2: XAU/USD and XAG/USD entries are permitted only during 08:00–17:00 Europe/London time, Monday to Friday.
+- Strategy 3: XAU/USD and XAG/USD are scanned throughout weekdays (24 hours, Monday–Friday UTC); no London-hours restriction. Weekends remain closed.
+- All three strategies: US500 entries are permitted only during 09:30–16:00 America/New_York time, Monday to Friday.
 - All three selected markets are blocked from 15 minutes before to 15 minutes after high-impact USD calendar events.
 - The calendar filter fails closed: if the calendar cannot be retrieved or parsed, the relevant entry alerts are skipped.
 - The calendar feed is a third-party source; verify major event times against a trusted economic calendar.
@@ -52,9 +53,9 @@ Holding/review windows are estimates based on ATR and target distance, not guara
 - The worker runs three concurrent market tasks for XAU/USD, XAG/USD and US500. Each market task evaluates the three strategies in sequence and shares the per-cycle candle cache, reducing duplicate downloads and avoiding three separate worker processes.
 - All three strategies keep separate state files inside each market directory under `.voroa_agents`: `.signal_state.json`, `.strategy2_state.json` and `.strategy3_state.json`.
 - The combined worker imports existing Strategy 3 state from the former `.voroa_strategy3` directory when available, merges it without deleting the source, and continues monitoring active plans outside entry sessions.
-- XAU/USD and XAG/USD use the London entry session; US500 uses the New York cash entry session. Do not run `strategy3_worker.py` at the same time as `worker.py`, or Strategy 3 could be scanned twice.
+- Strategies 1 and 2 use the London entry session for XAU/USD and XAG/USD. Strategy 3 scans those metals throughout weekdays without London-hours gating. US500 remains restricted to the New York cash session for all strategies. Do not run `strategy3_worker.py` at the same time as `worker.py`, or Strategy 3 could be scanned twice.
 - `watchlist.py` is the authoritative whitelist. Environment-variable overrides and direct strategy calls cannot add markets outside XAU/USD, XAG/USD, and US500.
-- The worker scans during the selected markets' London/New York sessions and pauses when both sessions are closed and no active plans need monitoring.
+- The worker remains active on weekdays for Strategy 3's unrestricted-hours metals scans, and pauses over weekends when no active plans need monitoring.
 - The shared Biquote adapter supplies completed 1-minute, 5-minute and 1-hour candles; 1-minute data is requested only by Strategy 2 when its existing fallback condition is met.
 - The worker preserves separate per-strategy state files and migrates compatible per-market state without deleting original files.
 
