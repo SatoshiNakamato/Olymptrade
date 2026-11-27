@@ -165,6 +165,9 @@ def operating_window_has_ended(now=None):
     local = now.astimezone(IST) if now else datetime.now(IST)
     return local.time().replace(tzinfo=None) >= clock_time(20, 0)
 
+def should_exit_after_window(exit_after_window, now=None):
+    return bool(exit_after_window and operating_window_has_ended(now))
+
 
 def request_stop(signum, frame):
     global STOP
@@ -190,7 +193,7 @@ def main(exit_after_window=False):
     was_active = False
     while not STOP:
         if not in_operating_window():
-            if operating_window_has_ended() and exit_after_window:
+            if should_exit_after_window(exit_after_window):
                 if was_active:
                     log("OPERATING_WINDOW_CLOSED; final cycle complete, cron process exiting")
                 else:
