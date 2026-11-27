@@ -45,8 +45,9 @@ def _as_utc(value):
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
 
-def main():
-    symbols = [s.strip() for s in os.getenv("SYMBOLS", "XAU/USD,XAG/USD,US500").split(",") if s.strip()]
+def main(symbols=None):
+    if symbols is None:
+        symbols = [s.strip() for s in os.getenv("SYMBOLS", "XAU/USD,XAG/USD,US500").split(",") if s.strip()]
     state = load_state()
     failures = []
 

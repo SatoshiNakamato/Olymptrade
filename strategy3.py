@@ -206,9 +206,10 @@ def _send_email(signal):
         smtp.send_message(msg)
 
 
-def main():
-    symbols = [s.strip().upper() for s in os.environ.get(
-        "SYMBOLS", ",".join(DEFAULT_SYMBOLS)).split(",") if s.strip()]
+def main(symbols=None):
+    if symbols is None:
+        symbols = [s.strip().upper() for s in os.environ.get(
+            "SYMBOLS", ",".join(DEFAULT_SYMBOLS)).split(",") if s.strip()]
     state = {}
     try:
         with open(STATE_PATH, encoding="utf-8") as f:

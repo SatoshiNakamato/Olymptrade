@@ -248,14 +248,14 @@ def _send_email(signal):
         smtp.send_message(msg)
 
 
-def main():
+def main(symbols=None):
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
             state = json.load(f)
     except (OSError, json.JSONDecodeError):
         state = {}
     errors = []
-    for symbol in SYMBOLS:
+    for symbol in (SYMBOLS if symbols is None else symbols):
         now = datetime.now(timezone.utc)
         try:
             old = state.get(symbol, {})

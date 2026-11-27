@@ -1,12 +1,14 @@
-"""Single-process central scanner for all markets and three unchanged strategies."""
-import importlib
+"""Three-market concurrent scanner; one Python process, isolated strategy state per market."""
+import importlib.util
 import json
 import os
 import signal
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, time as clock_time, timedelta, timezone
 from pathlib import Path
+from threading import Lock
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
@@ -14,6 +16,7 @@ MARKETS = ("XAU/USD", "XAG/USD", "US500")
 STRATEGY_MODULES = ("main", "strategy2", "strategy3")
 STATE_FILES = (".signal_state.json", ".strategy2_state.json", ".strategy3_state.json")
 SCAN_INTERVAL_SECONDS = 60
+MARKET_TASK_WARNING_SECONDS = 240
 IST = ZoneInfo("Asia/Kolkata")
 LONDON = ZoneInfo("Europe/London")
 NEW_YORK = ZoneInfo("America/New_York")
@@ -27,6 +30,10 @@ def log(message):
 
 def _slug(symbol):
     return symbol.lower().replace("/", "_")
+
+
+def _market_state_dir(symbol):
+    return ROOT / ".voroa_agents" / _slug(symbol)
 
 
 def _read_json(path):
@@ -63,7 +70,7 @@ def _entry_time(entry):
 
 
 def migrate_market_state():
-    """Merge per-market state created by the previous worker into central files."""
+    """Merge legacy per-market state into the central legacy files before seeding workers."""
     agent_root = ROOT / ".voroa_agents"
     if not agent_root.is_dir():
         return
@@ -73,8 +80,7 @@ def migrate_market_state():
         changed = False
         for symbol in MARKETS:
             source = agent_root / _slug(symbol) / filename
-            old = _read_json(source)
-            candidate = old.get(symbol)
+            candidate = _read_json(source).get(symbol)
             if not isinstance(candidate, dict):
                 continue
             current = merged.get(symbol)
@@ -87,69 +93,157 @@ def migrate_market_state():
                 changed = True
         if changed:
             _atomic_json(destination, merged)
-            log(f"STATE_MIGRATED {filename} from previous per-market worker")
+            log(f"LEGACY_STATE_MERGED {filename}")
+
+
+def _prepare_market_state(symbol):
+    """Give each market/strategy its own state file, seeding from the previous central files."""
+    directory = _market_state_dir(symbol)
+    directory.mkdir(parents=True, exist_ok=True)
+    for filename in STATE_FILES:
+        local_path = directory / filename
+        local_state = _read_json(local_path)
+        if symbol not in local_state:
+            legacy_entry = _read_json(ROOT / filename).get(symbol)
+            if isinstance(legacy_entry, dict):
+                local_state[symbol] = legacy_entry
+                _atomic_json(local_path, local_state)
 
 
 def _shared_market_feed(original_fetch):
-    """Return one per-cycle candle cache shared by all three strategy modules."""
+    """Thread-safe per-cycle candle cache; one download per symbol/interval/size."""
     cache = {}
-    downloads = {"hits": 0, "misses": 0}
+    key_locks = {}
+    guard = Lock()
+    counts = {"hits": 0, "misses": 0}
 
     def fetch(symbol, outputsize=1600, interval="5min"):
         key = (str(symbol).upper(), int(outputsize), str(interval))
-        if key not in cache:
-            cache[key] = original_fetch(symbol, outputsize=outputsize, interval=interval)
-            downloads["misses"] += 1
-        else:
-            downloads["hits"] += 1
-        frame = cache[key]
-        return frame.copy(deep=True) if hasattr(frame, "copy") else frame
+        with guard:
+            key_lock = key_locks.setdefault(key, Lock())
+        with key_lock:
+            with guard:
+                frame = cache.get(key)
+                if frame is not None:
+                    counts["hits"] += 1
+            if frame is None:
+                frame = original_fetch(symbol, outputsize=outputsize, interval=interval)
+                with guard:
+                    cache[key] = frame
+                    counts["misses"] += 1
+            return frame.copy(deep=True) if hasattr(frame, "copy") else frame
 
-    return fetch, cache, downloads
+    return fetch, cache, counts
 
 
-def run_cycle():
-    """Run all strategies sequentially in this process with shared candle data."""
+def _load_strategy(name, symbol, shared_fetch):
+    module_name = f"_market_{_slug(symbol)}_{name}"
+    path = ROOT / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    module.fetch_candles = shared_fetch
+    module.STATE_PATH = str(_market_state_dir(symbol) / STATE_FILES[STRATEGY_MODULES.index(name)])
+    return module
+
+
+def _run_market_task(symbol, shared_fetch):
+    """Run all three strategies for one market; failures do not stop its sibling markets."""
     started = time.monotonic()
-    os.environ["SYMBOLS"] = ",".join(MARKETS)
-    os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
-
-    market_data = importlib.import_module("market_data")
-    original_fetch = market_data.fetch_candles
-    shared_fetch, cache, counts = _shared_market_feed(original_fetch)
-    modules = [importlib.import_module(name) for name in STRATEGY_MODULES]
-
-    for module in modules:
-        module.fetch_candles = shared_fetch
-
-    log("CYCLE_STARTED markets=3 strategies=3 process_count=1")
+    log(f"MARKET_TASK_STARTED {symbol} strategies=3")
     failures = []
-    for name, module in zip(STRATEGY_MODULES, modules):
+    for name in STRATEGY_MODULES:
         if STOP:
             break
         strategy_started = time.monotonic()
-        log(f"STRATEGY_STARTED {name}.py")
         try:
-            module.main()
+            module = _load_strategy(name, symbol, shared_fetch)
+            log(f"STRATEGY_STARTED market={symbol} strategy={name}")
+            module.main(symbols=[symbol])
+            log(
+                f"STRATEGY_FINISHED market={symbol} strategy={name} "
+                f"duration={time.monotonic() - strategy_started:.1f}s"
+            )
         except Exception as exc:
             failures.append((name, exc))
-            log(f"STRATEGY_ERROR {name}.py {type(exc).__name__}: {exc}")
-        else:
-            log(f"STRATEGY_FINISHED {name}.py duration={time.monotonic() - strategy_started:.1f}s")
+            log(
+                f"STRATEGY_ERROR market={symbol} strategy={name} "
+                f"{type(exc).__name__}: {exc}"
+            )
+    elapsed = time.monotonic() - started
+    if failures:
+        log(
+            f"MARKET_TASK_FINISHED_WITH_ERRORS {symbol} duration={elapsed:.1f}s "
+            + " | ".join(f"{name}:{type(exc).__name__}" for name, exc in failures)
+        )
+        return False
+    log(f"MARKET_TASK_FINISHED {symbol} duration={elapsed:.1f}s")
+    return True
+
+
+def run_cycle():
+    """Launch three concurrent market tasks in this single Python process."""
+    started = time.monotonic()
+    os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
+    market_data = __import__("market_data")
+    shared_fetch, cache, counts = _shared_market_feed(market_data.fetch_candles)
+
+    for symbol in MARKETS:
+        _prepare_market_state(symbol)
+
+    log("CYCLE_STARTED markets=3 concurrent_market_tasks=3 strategies_per_market=3 process_count=1")
+    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="market") as pool:
+        futures = {pool.submit(_run_market_task, symbol, shared_fetch): symbol for symbol in MARKETS}
+        done, pending = wait(futures, timeout=MARKET_TASK_WARNING_SECONDS)
+        if pending:
+            for future in pending:
+                log(
+                    f"MARKET_TASK_SLOW {futures[future]} "
+                    f"elapsed_over_seconds={MARKET_TASK_WARNING_SECONDS}; task_kept_running"
+                )
+            # Python cannot safely kill a running thread. Keep the other tasks running,
+            # allow bounded network/SMTP operations to finish, and never overlap cycles.
+            wait(pending)
+        failures = []
+        for future, symbol in futures.items():
+            try:
+                if not future.result():
+                    failures.append(symbol)
+            except Exception as exc:
+                failures.append(symbol)
+                log(f"MARKET_TASK_CRASH {symbol} {type(exc).__name__}: {exc}")
 
     elapsed = time.monotonic() - started
+    with counts_guard(counts):
+        hits, misses = counts["hits"], counts["misses"]
     log(
-        f"CYCLE_FINISHED duration={elapsed:.1f}s "
-        f"market_data_cache_hits={counts['hits']} "
-        f"market_data_fetches={counts['misses']} cached_frames={len(cache)}"
+        f"CYCLE_FINISHED duration={elapsed:.1f}s market_data_cache_hits={hits} "
+        f"market_data_fetches={misses} cached_frames={len(cache)} "
+        f"failed_markets={','.join(failures) if failures else 'none'}"
     )
-    if failures:
-        log("CYCLE_ERRORS " + " | ".join(f"{name}: {type(exc).__name__}" for name, exc in failures))
     return not failures
 
 
+class counts_guard:
+    """Small context manager used only to take a consistent cache-counter snapshot."""
+    def __init__(self, counts):
+        self.counts = counts
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 def in_operating_window(now=None):
-    """True while either selected market's entry session is open."""
     utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
     london = utc_now.astimezone(LONDON)
     new_york = utc_now.astimezone(NEW_YORK)
@@ -173,12 +267,16 @@ def seconds_until_next_start(now=None):
     utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
     london_open = _next_weekday_open(utc_now, LONDON, 8, 0)
     new_york_open = _next_weekday_open(utc_now, NEW_YORK, 9, 30)
-    next_open = min(london_open, new_york_open)
-    return max(1.0, (next_open - utc_now).total_seconds())
+    return max(1.0, (min(london_open, new_york_open) - utc_now).total_seconds())
 
 
 def has_active_plans():
-    """Keep checking only selected markets when an existing plan needs monitoring."""
+    for symbol in MARKETS:
+        for filename in STATE_FILES:
+            entry = _read_json(_market_state_dir(symbol) / filename).get(symbol)
+            if isinstance(entry, dict) and isinstance(entry.get("active_plan"), dict):
+                return True
+    # Also honor central state during migration/first start.
     for filename in STATE_FILES:
         state = _read_json(ROOT / filename)
         for symbol in MARKETS:
@@ -186,6 +284,7 @@ def has_active_plans():
             if isinstance(entry, dict) and isinstance(entry.get("active_plan"), dict):
                 return True
     return False
+
 
 def request_stop(signum, frame):
     global STOP
@@ -199,15 +298,16 @@ def main():
     sys.path.insert(0, str(ROOT))
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
-
-    os.environ.setdefault("SYMBOLS", ",".join(MARKETS))
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
-    log("CENTRAL_SCANNER_STARTED markets=3 strategies=3 processes=1 alert_only=true")
+    log("CENTRAL_SCANNER_STARTED markets=3 concurrent_tasks=3 strategies=3 processes=1 alert_only=true")
     log("MARKETS XAU/USD,XAG/USD,US500")
     log("OPERATING_SESSIONS XAU/XAG=08:00-17:00 Europe/London US500=09:30-16:00 America/New_York")
+    log("TASK_MODEL one_process_three_market_threads isolated_strategy_state=true")
     log("STRATEGY_RULES_UNCHANGED shared_candles=true")
 
     migrate_market_state()
+    for symbol in MARKETS:
+        _prepare_market_state(symbol)
     next_scan = time.monotonic()
     was_active = False
     while not STOP:
@@ -217,12 +317,9 @@ def main():
             if was_active:
                 log("MARKET_SESSIONS_CLOSED; scanning paused until next London or New York open")
             was_active = False
-            # Sleep while neither entry session is open and no selected-market plan
-            # needs monitoring. Recheck periodically and remain responsive to shutdown.
             time.sleep(min(300.0, seconds_until_next_start()))
             next_scan = time.monotonic()
             continue
-
         if not was_active:
             if session_open:
                 log("MARKET_SESSION_OPEN; scanning XAU/USD,XAG/USD,US500")
@@ -240,10 +337,6 @@ def main():
             time.sleep(delay)
         else:
             log(f"SCAN_CADENCE_OVERRUN seconds={-delay:.1f}; next cycle starts without overlap")
-
-        if not in_operating_window():
-            continue
-
     log("CENTRAL_SCANNER_STOPPED")
 
 

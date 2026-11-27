@@ -108,7 +108,18 @@ def send_if_not_duplicate(symbol, action, now, send, strategy=""):
             f"{label}ALERT_SEND_START {symbol} {action}",
             flush=True,
         )
-        send()
+        try:
+            send()
+        except Exception as exc:
+            # SMTP can time out after the server accepted a message. Do not mark it
+            # sent; make the delivery uncertainty explicit for operator review.
+            print(
+                f"[{datetime.now(timezone.utc).isoformat(timespec='milliseconds')}] "
+                f"{label}ALERT_DELIVERY_UNCERTAIN {symbol} {action} "
+                f"error={type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            raise
 
         sent_at = datetime.now(timezone.utc)
         elapsed = time.monotonic() - started
