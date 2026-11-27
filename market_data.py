@@ -19,14 +19,9 @@ CACHE_TTL_SECONDS = 20  # Keep scans fresh; each strategy process reuses recent 
 DEFAULT_OUTPUTSIZE = 1600
 CACHE_DIR = Path(tempfile.gettempdir()) / "olymptrade-market-cache"
 SYMBOL_MAP = {
-    "EUR/USD": "EURUSD",
-    "GBP/USD": "GBPUSD",
-    "USD/JPY": "USDJPY",
-    "AUD/USD": "AUDUSD",
-    "US500": "US500",
     "XAU/USD": "XAUUSD",
     "XAG/USD": "XAGUSD",
-    "BTC/USD": "BTCUSD",
+    "US500": "US500",
 }
 INTERVAL_MAP = {
     "1min": ("1m", 300, 100),
