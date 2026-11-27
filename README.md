@@ -48,8 +48,10 @@ Holding/review windows are estimates based on ATR and target distance, not guara
 
 ## Automation and data
 
-- Voroa runs one central Python worker (`python worker.py`) for exactly three markets and all three strategies.
-- One Python process launches three concurrent market tasks; each task runs the three strategies sequentially for its market.
+- Voroa uses two independent Background Workers: `python worker.py` runs Strategies 1 and 2; `python strategy3_worker.py` runs Strategy 3 only.
+- Each worker uses one Python process and three concurrent market tasks for XAU/USD, XAG/USD and US500. The Strategy 3 worker has its own `.voroa_strategy3` state directory; the Strategies 1+2 worker uses `.voroa_agents`.
+- Both workers enforce the same London entry session for gold/silver and New York cash entry session for US500. Existing plans remain monitored outside entry sessions.
+- Strategy 3's dedicated worker imports any accessible legacy Strategy 3 per-market state from `.voroa_agents` or `.strategy3_state.json` on first start, without deleting the source.
 - `watchlist.py` is the authoritative whitelist. Environment-variable overrides and direct strategy calls cannot add markets outside XAU/USD, XAG/USD, and US500.
 - The worker scans during the selected markets' London/New York sessions and pauses when both sessions are closed and no active plans need monitoring.
 - The shared Biquote adapter supplies completed 1-minute, 5-minute and 1-hour candles; 1-minute data is requested only by Strategy 2 when its existing fallback condition is met.
