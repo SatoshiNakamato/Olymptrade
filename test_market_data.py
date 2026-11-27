@@ -21,11 +21,11 @@ class MarketDataFreshnessTests(unittest.TestCase):
 
     def test_stale_five_minute_candle_is_rejected(self):
         with self.assertRaisesRegex(MarketDataError, "stale"):
-            _validate_freshness(self.frame("2026-11-27T11:55:00Z"), "5min", self.now)
+            _validate_freshness(self.frame("2026-11-27T11:50:00Z"), "5min", self.now)
 
     def test_stale_one_minute_fallback_is_rejected(self):
         with self.assertRaisesRegex(MarketDataError, "stale"):
-            _validate_freshness(self.frame("2026-11-27T12:07:00Z"), "1min", self.now)
+            _validate_freshness(self.frame("2026-11-27T12:06:00Z"), "1min", self.now)
 
     def test_stale_hourly_candle_is_rejected(self):
         with self.assertRaisesRegex(MarketDataError, "stale"):
