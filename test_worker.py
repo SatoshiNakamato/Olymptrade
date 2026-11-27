@@ -129,6 +129,14 @@ class CentralScannerTests(unittest.TestCase):
         self.assertEqual(scanner.seconds_until_next_start(after_close), 9 * 3600)
         self.assertEqual(scanner.seconds_until_next_start(late_night), 6 * 3600)
 
+    def test_daily_cron_run_exits_at_eight_pm(self):
+        before_close = datetime.fromisoformat("2026-11-27T19:59:00+05:30")
+        closes = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
+        late_night = datetime.fromisoformat("2026-11-27T23:00:00+05:30")
+        self.assertFalse(scanner.operating_window_has_ended(before_close))
+        self.assertTrue(scanner.operating_window_has_ended(closes))
+        self.assertTrue(scanner.operating_window_has_ended(late_night))
+
 
 if __name__ == "__main__":
     unittest.main()
