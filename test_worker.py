@@ -139,7 +139,7 @@ class CentralScannerTests(unittest.TestCase):
             destination = json.loads((root / ".signal_state.json").read_text())
             self.assertEqual(destination["XAU/USD"]["key"], "central")
 
-    def test_operating_window_tracks_london_and_new_york_sessions(self):
+    def test_operating_window_includes_strategy3_weekdays_and_existing_sessions(self):
         before_london = datetime.fromisoformat("2026-11-27T07:59:00+00:00")
         london_open = datetime.fromisoformat("2026-11-27T08:00:00+00:00")
         london_closed_ny_open = datetime.fromisoformat("2026-11-27T17:00:00+00:00")
@@ -159,7 +159,7 @@ class CentralScannerTests(unittest.TestCase):
         self.assertTrue(scanner.strategy3_metals_window_open(friday_evening))
         self.assertFalse(scanner.strategy3_metals_window_open(saturday))
 
-    def test_next_start_uses_next_london_or_new_york_open_and_skips_weekends(self):
+    def test_next_start_uses_strategy3_weekday_start_and_skips_weekends(self):
         before_london = datetime.fromisoformat("2026-11-27T07:59:00+00:00")
         after_both_close = datetime.fromisoformat("2026-11-27T21:00:00+00:00")
         self.assertEqual(scanner.seconds_until_next_start(before_london), 60)
