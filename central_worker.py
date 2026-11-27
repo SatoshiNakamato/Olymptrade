@@ -15,6 +15,7 @@ from watchlist import ALLOWED_SYMBOLS
 
 ROOT = Path(__file__).resolve().parent
 STATE_ROOT = ROOT / ".voroa_agents"
+WORKER_NAME = "CENTRAL_SCANNER"
 MARKETS = ALLOWED_SYMBOLS
 STRATEGY_MODULES = ("main", "strategy2")
 STATE_FILES = (".signal_state.json", ".strategy2_state.json")
@@ -286,7 +287,7 @@ def main():
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
-    log(f"CENTRAL_SCANNER_STARTED markets={len(MARKETS)} concurrent_tasks={len(MARKETS)} strategies={len(STRATEGY_MODULES)} processes=1 alert_only=true pid={os.getpid()}")
+    log(f"{WORKER_NAME}_STARTED markets={len(MARKETS)} concurrent_tasks={len(MARKETS)} strategies={len(STRATEGY_MODULES)} processes=1 alert_only=true pid={os.getpid()}")
     log("MARKETS XAU/USD,XAG/USD,US500")
     log("OPERATING_SESSIONS XAU/XAG=08:00-17:00 Europe/London US500=09:30-16:00 America/New_York")
     log("TASK_MODEL one_process_three_market_threads isolated_strategy_state=true")
@@ -335,7 +336,7 @@ def main():
             STOP_EVENT.wait(delay)
         else:
             log(f"SCAN_CADENCE_OVERRUN seconds={-delay:.1f}; next cycle starts without overlap")
-    log("CENTRAL_SCANNER_STOPPED")
+    log(f"{WORKER_NAME}_STOPPED")
 
 
 if __name__ == "__main__":
