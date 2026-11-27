@@ -273,7 +273,7 @@ def request_stop(signum, frame):
     global STOP
     STOP = True
     STOP_EVENT.set()
-    log(f"STOP_REQUESTED signal={signum} wake_requested=true")
+    log(f"STOP_REQUESTED signal={signum} wake_requested=true pid={os.getpid()}")
 
 
 def main():
@@ -285,7 +285,7 @@ def main():
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
-    log("CENTRAL_SCANNER_STARTED markets=3 concurrent_tasks=3 strategies=3 processes=1 alert_only=true")
+    log(f"CENTRAL_SCANNER_STARTED markets=3 concurrent_tasks=3 strategies=3 processes=1 alert_only=true pid={os.getpid()}")
     log("MARKETS XAU/USD,XAG/USD,US500")
     log("OPERATING_SESSIONS XAU/XAG=08:00-17:00 Europe/London US500=09:30-16:00 America/New_York")
     log("TASK_MODEL one_process_three_market_threads isolated_strategy_state=true")
