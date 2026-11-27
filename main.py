@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from market_data import fetch_candles
 from signals import evaluate
 from email_alerts import send_alert, send_exit_alert
-from market_filters import london_session_status, new_york_session_status, usd_high_impact_news_status
+from market_filters import entry_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert
 from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
@@ -52,7 +52,6 @@ def main():
 
     for symbol in symbols:
         now = datetime.now(timezone.utc)
-        in_session, session_reason = london_session_status(now)
         try:
             previous = state.get(symbol, {})
             plan = previous.get("active_plan")
@@ -78,13 +77,8 @@ def main():
                 continue
 
             # Session/news filters block entries, not monitoring of existing plans.
-            # FX and gold follow the London-session filter; crypto trades 24/7.
-            is_crypto = symbol.upper().startswith(("BTC/", "ETH/"))
-            if symbol == "US500":
-                market_open, market_reason = new_york_session_status(now)
-            else:
-                market_open, market_reason = in_session, session_reason
-            if not is_crypto and not market_open:
+            market_open, market_reason = entry_session_status(symbol, now)
+            if not market_open:
                 print(f"{symbol} new entries skipped: {market_reason}")
                 continue
             if symbol in {"XAU/USD", "XAG/USD", "US500"}:
@@ -102,6 +96,15 @@ def main():
                 continue
 
             detected_at = datetime.now(timezone.utc)
+            market_open, market_reason = entry_session_status(symbol, detected_at)
+            if not market_open:
+                print(f"{symbol} entry suppressed at send time: {market_reason}")
+                continue
+            news_ok, news_reason = usd_high_impact_news_status(detected_at)
+            if not news_ok:
+                print(f"{symbol} entry suppressed at send time: {news_reason}")
+                continue
+            now = detected_at
             print(
                 f"[{detected_at.isoformat(timespec='milliseconds')}] "
                 f"Strategy 1 SIGNAL_DETECTED {symbol} {signal['action']} "
