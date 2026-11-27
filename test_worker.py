@@ -71,11 +71,11 @@ class CentralScannerTests(unittest.TestCase):
     def test_previous_per_market_state_is_migrated_without_deleting_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            agent_dir = root / ".voroa_agents" / "eur_usd"
+            agent_dir = root / ".voroa_agents" / "xau_usd"
             agent_dir.mkdir(parents=True)
             source = agent_dir / ".signal_state.json"
             source.write_text(json.dumps({
-                "EUR/USD": {
+                "XAU/USD": {
                     "key": "old-agent-key",
                     "sent_at": "2026-11-27T01:00:00+00:00",
                     "active_plan": {"action": "BUY"},
@@ -84,25 +84,25 @@ class CentralScannerTests(unittest.TestCase):
             with patch.object(scanner, "ROOT", root):
                 scanner.migrate_market_state()
             destination = json.loads((root / ".signal_state.json").read_text())
-            self.assertEqual(destination["EUR/USD"]["key"], "old-agent-key")
-            self.assertEqual(destination["EUR/USD"]["active_plan"]["action"], "BUY")
+            self.assertEqual(destination["XAU/USD"]["key"], "old-agent-key")
+            self.assertEqual(destination["XAU/USD"]["active_plan"]["action"], "BUY")
             self.assertTrue(source.exists())
 
     def test_existing_newer_central_state_is_preserved_during_migration(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            agent_dir = root / ".voroa_agents" / "eur_usd"
+            agent_dir = root / ".voroa_agents" / "xau_usd"
             agent_dir.mkdir(parents=True)
             (root / ".signal_state.json").write_text(json.dumps({
-                "EUR/USD": {"key": "central", "sent_at": "2026-11-27T02:00:00+00:00"}
+                "XAU/USD": {"key": "central", "sent_at": "2026-11-27T02:00:00+00:00"}
             }), encoding="utf-8")
             (agent_dir / ".signal_state.json").write_text(json.dumps({
-                "EUR/USD": {"key": "older-agent", "sent_at": "2026-11-27T01:00:00+00:00"}
+                "XAU/USD": {"key": "older-agent", "sent_at": "2026-11-27T01:00:00+00:00"}
             }), encoding="utf-8")
             with patch.object(scanner, "ROOT", root):
                 scanner.migrate_market_state()
             destination = json.loads((root / ".signal_state.json").read_text())
-            self.assertEqual(destination["EUR/USD"]["key"], "central")
+            self.assertEqual(destination["XAU/USD"]["key"], "central")
 
     def test_operating_window_tracks_london_and_new_york_sessions(self):
         before_london = datetime.fromisoformat("2026-11-27T07:59:00+00:00")
