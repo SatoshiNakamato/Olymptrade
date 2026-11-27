@@ -56,7 +56,7 @@ Holding/review windows are estimates based on ATR and target distance, not guara
 - `watchlist.py` is the authoritative whitelist. Environment-variable overrides and direct strategy calls cannot add markets outside XAU/USD, XAG/USD, and US500.
 - The worker scans during the selected markets' London/New York sessions and pauses when both sessions are closed and no active plans need monitoring.
 - The shared Biquote adapter supplies completed 1-minute, 5-minute and 1-hour candles; 1-minute data is requested only by Strategy 2 when its existing fallback condition is met.
-- Each worker preserves its own strategy state files and migrates compatible per-market state without deleting the original files.
+- The worker preserves separate per-strategy state files and migrates compatible per-market state without deleting original files.
 
 ## Required GitHub Actions secrets
 
