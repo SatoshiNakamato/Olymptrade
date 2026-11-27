@@ -10,10 +10,6 @@ import central_worker as scanner
 
 # Reuse the proven one-process / three-market scheduler, but give this worker
 # its own strategy list and persistent state namespace.
-scanner.STRATEGY_MODULES = ("strategy3",)
-scanner.STATE_FILES = (".strategy3_state.json",)
-scanner.STATE_ROOT = scanner.ROOT / ".voroa_strategy3"
-scanner.WORKER_NAME = "STRATEGY3_SCANNER"
 
 
 def import_legacy_strategy3_state():
@@ -43,7 +39,15 @@ def import_legacy_strategy3_state():
             break
 
 
+def configure_worker():
+    scanner.STRATEGY_MODULES = ("strategy3",)
+    scanner.STATE_FILES = (".strategy3_state.json",)
+    scanner.STATE_ROOT = scanner.ROOT / ".voroa_strategy3"
+    scanner.WORKER_NAME = "STRATEGY3_SCANNER"
+
+
 def main():
+    configure_worker()
     scanner.os.chdir(scanner.ROOT)
     scanner.STATE_ROOT.mkdir(parents=True, exist_ok=True)
     import_legacy_strategy3_state()
