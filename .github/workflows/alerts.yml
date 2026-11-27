@@ -79,6 +79,8 @@ jobs:
         run: python -m unittest -v test_market_data.py
       - name: Test selected market entry-session gates
         run: python -m unittest -v test_market_filters.py
+      - name: Test strict three-market whitelist
+        run: python -m unittest -v test_watchlist.py
       - name: Test single-process central scanner, shared market feed and state migration
         run: python -m unittest -v test_worker.py
       - name: Test atomic scanner state and market entry filters
