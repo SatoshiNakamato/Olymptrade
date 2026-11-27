@@ -137,6 +137,11 @@ class CentralScannerTests(unittest.TestCase):
         self.assertTrue(scanner.operating_window_has_ended(closes))
         self.assertTrue(scanner.operating_window_has_ended(late_night))
 
+    def test_only_cron_entrypoint_exits_after_daily_window(self):
+        closes = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
+        self.assertFalse(scanner.should_exit_after_window(False, closes))
+        self.assertTrue(scanner.should_exit_after_window(True, closes))
+
 
 if __name__ == "__main__":
     unittest.main()
