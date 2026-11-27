@@ -261,6 +261,12 @@ def run_cycle():
 
 
 
+def strategy3_metals_window_open(now=None):
+    """Strategy 3 scans XAU/XAG around the clock on weekdays, independent of London."""
+    utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
+    return utc_now.weekday() < 5
+
+
 def in_operating_window(now=None):
     utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
     london = utc_now.astimezone(LONDON)
@@ -268,7 +274,7 @@ def in_operating_window(now=None):
     london_open = london.weekday() < 5 and clock_time(8, 0) <= london.time().replace(tzinfo=None) < clock_time(17, 0)
     ny_minutes = new_york.hour * 60 + new_york.minute
     new_york_open = new_york.weekday() < 5 and 9 * 60 + 30 <= ny_minutes < 16 * 60
-    return london_open or new_york_open
+    return london_open or new_york_open or strategy3_metals_window_open(utc_now)
 
 
 def _next_weekday_open(now_utc, zone, hour, minute):
@@ -285,7 +291,8 @@ def seconds_until_next_start(now=None):
     utc_now = now.astimezone(timezone.utc) if now else datetime.now(timezone.utc)
     london_open = _next_weekday_open(utc_now, LONDON, 8, 0)
     new_york_open = _next_weekday_open(utc_now, NEW_YORK, 9, 30)
-    return max(1.0, (min(london_open, new_york_open) - utc_now).total_seconds())
+    strategy3_weekday_open = _next_weekday_open(utc_now, timezone.utc, 0, 0)
+    return max(1.0, (min(london_open, new_york_open, strategy3_weekday_open) - utc_now).total_seconds())
 
 
 def has_active_plans():
@@ -315,7 +322,7 @@ def main():
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
     log(f"{WORKER_NAME}_STARTED markets={len(MARKETS)} concurrent_tasks={len(MARKETS)} strategies={len(STRATEGY_MODULES)} processes=1 alert_only=true pid={os.getpid()}")
     log("MARKETS XAU/USD,XAG/USD,US500")
-    log("OPERATING_SESSIONS XAU/XAG=08:00-17:00 Europe/London US500=09:30-16:00 America/New_York")
+    log("OPERATING_SESSIONS S1/S2 XAU/XAG=08:00-17:00 Europe/London; S3 XAU/XAG=24/5; US500=09:30-16:00 America/New_York")
     log("TASK_MODEL one_process_three_market_threads isolated_strategy_state=true")
     log("STRATEGY_SET " + ",".join(STRATEGY_MODULES))
     log("STRATEGY_RULES_UNCHANGED shared_candles=true")
@@ -331,7 +338,7 @@ def main():
         active_plans = has_active_plans()
         if not session_open and not active_plans:
             if was_active:
-                log("MARKET_SESSIONS_CLOSED; scanning paused until next London or New York open")
+                log("MARKET_SESSIONS_CLOSED; scanning paused until next Strategy 3 weekday or US session")
             was_active = False
             # Sleep directly until the next scheduled session; the event remains interruptible.
             # Avoid waking every five minutes throughout the overnight/weekend idle period.
@@ -347,7 +354,7 @@ def main():
             continue
         if not was_active:
             if session_open:
-                log("MARKET_SESSION_OPEN; scanning XAU/USD,XAG/USD,US500")
+                log("SCANNING_WINDOW_OPEN; Strategy 3 metals 24/5; US500 and Strategy 1/2 retain session filters")
             else:
                 log("ACTIVE_PLAN_MONITORING_ONLY; no new entries outside market sessions")
             was_active = True
