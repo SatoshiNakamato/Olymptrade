@@ -161,21 +161,13 @@ def seconds_until_next_start(now=None):
         next_start += timedelta(days=1)
     return max(1.0, (next_start - local).total_seconds())
 
-def operating_window_has_ended(now=None):
-    local = now.astimezone(IST) if now else datetime.now(IST)
-    return local.time().replace(tzinfo=None) >= clock_time(20, 0)
-
-def should_exit_after_window(exit_after_window, now=None):
-    return bool(exit_after_window and operating_window_has_ended(now))
-
-
 def request_stop(signum, frame):
     global STOP
     STOP = True
     log(f"STOP_REQUESTED signal={signum}")
 
 
-def main(exit_after_window=False):
+def main():
     global STOP
     os.chdir(ROOT)
     sys.path.insert(0, str(ROOT))
@@ -193,16 +185,12 @@ def main(exit_after_window=False):
     was_active = False
     while not STOP:
         if not in_operating_window():
-            if should_exit_after_window(exit_after_window):
-                if was_active:
-                    log("OPERATING_WINDOW_CLOSED; final cycle complete, cron process exiting")
-                else:
-                    log("OUTSIDE_OPERATING_WINDOW; cron process exiting")
-                break
             if was_active:
                 log("OPERATING_WINDOW_CLOSED; scanning paused until 05:00 IST")
             was_active = False
-            time.sleep(min(30.0, seconds_until_next_start()))
+            # Stay alive as a Background Worker, but wake only every five minutes
+            # to check the clock and respond to shutdown signals.
+            time.sleep(min(300.0, seconds_until_next_start()))
             next_scan = time.monotonic()
             continue
 
