@@ -207,7 +207,6 @@ def _send_email(signal):
 
 
 def main():
-    now = datetime.now(timezone.utc)
     symbols = [s.strip().upper() for s in os.environ.get(
         "SYMBOLS", ",".join(DEFAULT_SYMBOLS)).split(",") if s.strip()]
     state = {}
@@ -221,11 +220,29 @@ def main():
 
     scan_errors = []
     for symbol in symbols:
+        now = datetime.now(timezone.utc)
+        old = state.get(symbol, {})
+        active = old.get("active_plan")
         try:
+            # Do not fetch or analyze a market that is outside its entry session.
+            # Existing plans remain eligible for monitoring outside entry sessions.
+            if not active:
+                if symbol == "US500":
+                    in_session, reason = new_york_session_status(now)
+                elif symbol != "BTC/USD":
+                    in_session, reason = london_session_status(now)
+                else:
+                    in_session, reason = True, "Crypto trades 24/7"
+                if not in_session:
+                    print(f"Strategy 3 {symbol}: WAIT — {reason}")
+                    continue
+                if _requires_usd_news_filter(symbol):
+                    news_ok, news_reason = usd_high_impact_news_status(now)
+                    if not news_ok:
+                        print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
+                        continue
+
             raw5 = fetch_candles(symbol, interval="5min")
-            raw1h = fetch_candles(symbol, interval="1hour")
-            old = state.get(symbol, {})
-            active = old.get("active_plan")
             if active:
                 events = monitor_and_notify(raw5, active, now, symbol)
                 for event in events:
@@ -244,23 +261,8 @@ def main():
                 state[symbol] = old
                 _save_state(state)
                 continue
-            # Session and news filters block new entries, never monitoring of an active plan.
-            if symbol == "US500":
-                in_session, reason = new_york_session_status(now)
-            elif symbol != "BTC/USD":
-                in_session, reason = london_session_status(now)
-            else:
-                in_session, reason = True, "Crypto trades 24/7"
-            if not in_session:
-                print(f"Strategy 3 {symbol}: WAIT — {reason}")
-                continue
-            # Match Strategies 1 and 2: USD calendar blocks FX, metals and US500 entries,
-            # but does not block BTC/USD, which trades 24/7 and is not a USD event session.
-            if _requires_usd_news_filter(symbol):
-                news_ok, news_reason = usd_high_impact_news_status(now)
-                if not news_ok:
-                    print(f"Strategy 3 {symbol}: WAIT — {news_reason}")
-                    continue
+
+            raw1h = fetch_candles(symbol, interval="1hour")
             signal = evaluate_strategy3(raw5, now, symbol, raw1h=raw1h)
         except Exception as exc:
             scan_errors.append(f"{symbol}: {type(exc).__name__}: {exc}")
