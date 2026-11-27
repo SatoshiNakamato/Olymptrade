@@ -110,10 +110,24 @@ class CentralScannerTests(unittest.TestCase):
             self.assertEqual(destination["EUR/USD"]["key"], "central")
 
     def test_operating_window_uses_india_time(self):
+        before_open = datetime.fromisoformat("2026-11-27T04:59:00+05:30")
+        opens = datetime.fromisoformat("2026-11-27T05:00:00+05:30")
         inside = datetime.fromisoformat("2026-11-27T12:00:00+05:30")
-        outside = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
+        before_close = datetime.fromisoformat("2026-11-27T19:59:00+05:30")
+        closes = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
+        self.assertFalse(scanner.in_operating_window(before_open))
+        self.assertTrue(scanner.in_operating_window(opens))
         self.assertTrue(scanner.in_operating_window(inside))
-        self.assertFalse(scanner.in_operating_window(outside))
+        self.assertTrue(scanner.in_operating_window(before_close))
+        self.assertFalse(scanner.in_operating_window(closes))
+
+    def test_next_start_waits_until_five_am_india_time(self):
+        before_open = datetime.fromisoformat("2026-11-27T04:00:00+05:30")
+        after_close = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
+        late_night = datetime.fromisoformat("2026-11-27T23:00:00+05:30")
+        self.assertEqual(scanner.seconds_until_next_start(before_open), 3600)
+        self.assertEqual(scanner.seconds_until_next_start(after_close), 9 * 3600)
+        self.assertEqual(scanner.seconds_until_next_start(late_night), 6 * 3600)
 
 
 if __name__ == "__main__":
