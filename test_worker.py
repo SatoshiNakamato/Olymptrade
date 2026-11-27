@@ -11,14 +11,9 @@ import central_worker as scanner
 
 
 class CentralScannerTests(unittest.TestCase):
-    def test_exactly_eight_markets_and_three_strategies(self):
-        self.assertEqual(len(scanner.MARKETS), 8)
+    def test_exactly_three_selected_markets_and_three_strategies(self):
+        self.assertEqual(scanner.MARKETS, ("XAU/USD", "XAG/USD", "US500"))
         self.assertEqual(len(scanner.STRATEGY_MODULES), 3)
-        self.assertEqual(
-            set(scanner.MARKETS),
-            {"EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD",
-             "XAU/USD", "XAG/USD", "BTC/USD", "US500"},
-        )
 
     def test_shared_feed_downloads_each_symbol_interval_once_per_cycle(self):
         calls = []
@@ -109,25 +104,36 @@ class CentralScannerTests(unittest.TestCase):
             destination = json.loads((root / ".signal_state.json").read_text())
             self.assertEqual(destination["EUR/USD"]["key"], "central")
 
-    def test_operating_window_uses_india_time(self):
-        before_open = datetime.fromisoformat("2026-11-27T04:59:00+05:30")
-        opens = datetime.fromisoformat("2026-11-27T05:00:00+05:30")
-        inside = datetime.fromisoformat("2026-11-27T12:00:00+05:30")
-        before_close = datetime.fromisoformat("2026-11-27T19:59:00+05:30")
-        closes = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
-        self.assertFalse(scanner.in_operating_window(before_open))
-        self.assertTrue(scanner.in_operating_window(opens))
-        self.assertTrue(scanner.in_operating_window(inside))
-        self.assertTrue(scanner.in_operating_window(before_close))
-        self.assertFalse(scanner.in_operating_window(closes))
+    def test_operating_window_tracks_london_and_new_york_sessions(self):
+        before_london = datetime.fromisoformat("2026-11-27T07:59:00+00:00")
+        london_open = datetime.fromisoformat("2026-11-27T08:00:00+00:00")
+        london_closed_ny_open = datetime.fromisoformat("2026-11-27T17:00:00+00:00")
+        ny_still_open = datetime.fromisoformat("2026-11-27T20:59:00+00:00")
+        both_closed = datetime.fromisoformat("2026-11-27T21:00:00+00:00")
+        self.assertFalse(scanner.in_operating_window(before_london))
+        self.assertTrue(scanner.in_operating_window(london_open))
+        self.assertTrue(scanner.in_operating_window(london_closed_ny_open))
+        self.assertTrue(scanner.in_operating_window(ny_still_open))
+        self.assertFalse(scanner.in_operating_window(both_closed))
 
-    def test_next_start_waits_until_five_am_india_time(self):
-        before_open = datetime.fromisoformat("2026-11-27T04:00:00+05:30")
-        after_close = datetime.fromisoformat("2026-11-27T20:00:00+05:30")
-        late_night = datetime.fromisoformat("2026-11-27T23:00:00+05:30")
-        self.assertEqual(scanner.seconds_until_next_start(before_open), 3600)
-        self.assertEqual(scanner.seconds_until_next_start(after_close), 9 * 3600)
-        self.assertEqual(scanner.seconds_until_next_start(late_night), 6 * 3600)
+    def test_next_start_uses_next_london_or_new_york_open_and_skips_weekends(self):
+        before_london = datetime.fromisoformat("2026-11-27T07:59:00+00:00")
+        after_both_close = datetime.fromisoformat("2026-11-27T21:00:00+00:00")
+        self.assertEqual(scanner.seconds_until_next_start(before_london), 60)
+        self.assertEqual(scanner.seconds_until_next_start(after_both_close), 59 * 3600)
+
+    def test_active_plan_detection_only_checks_selected_markets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".signal_state.json").write_text(json.dumps({
+                "EUR/USD": {"active_plan": {"action": "BUY"}}
+            }), encoding="utf-8")
+            with patch.object(scanner, "ROOT", root):
+                self.assertFalse(scanner.has_active_plans())
+                (root / ".strategy2_state.json").write_text(json.dumps({
+                    "XAU/USD": {"active_plan": {"action": "SELL"}}
+                }), encoding="utf-8")
+                self.assertTrue(scanner.has_active_plans())
 
 
 if __name__ == "__main__":
