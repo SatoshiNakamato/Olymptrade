@@ -14,9 +14,10 @@ from zoneinfo import ZoneInfo
 from watchlist import ALLOWED_SYMBOLS
 
 ROOT = Path(__file__).resolve().parent
+STATE_ROOT = ROOT / ".voroa_agents"
 MARKETS = ALLOWED_SYMBOLS
-STRATEGY_MODULES = ("main", "strategy2", "strategy3")
-STATE_FILES = (".signal_state.json", ".strategy2_state.json", ".strategy3_state.json")
+STRATEGY_MODULES = ("main", "strategy2")
+STATE_FILES = (".signal_state.json", ".strategy2_state.json")
 SCAN_INTERVAL_SECONDS = 60
 MARKET_TASK_WARNING_SECONDS = 240
 IST = ZoneInfo("Asia/Kolkata")
@@ -36,7 +37,7 @@ def _slug(symbol):
 
 
 def _market_state_dir(symbol):
-    return ROOT / ".voroa_agents" / _slug(symbol)
+    return STATE_ROOT / _slug(symbol)
 
 
 def _read_json(path):
@@ -74,7 +75,7 @@ def _entry_time(entry):
 
 def migrate_market_state():
     """Merge legacy per-market state into the central legacy files before seeding workers."""
-    agent_root = ROOT / ".voroa_agents"
+    agent_root = STATE_ROOT
     if not agent_root.is_dir():
         return
     for filename in STATE_FILES:
@@ -159,7 +160,7 @@ def _load_strategy(name, symbol, shared_fetch):
 def _run_market_task(symbol, shared_fetch):
     """Run all three strategies for one market; failures do not stop its sibling markets."""
     started = time.monotonic()
-    log(f"MARKET_TASK_STARTED {symbol} strategies=3")
+    log(f"MARKET_TASK_STARTED {symbol} strategies={len(STRATEGY_MODULES)}")
     failures = []
     for name in STRATEGY_MODULES:
         if STOP:
@@ -200,7 +201,7 @@ def run_cycle():
     for symbol in MARKETS:
         _prepare_market_state(symbol)
 
-    log("CYCLE_STARTED markets=3 concurrent_market_tasks=3 strategies_per_market=3 process_count=1")
+    log(f"CYCLE_STARTED markets={len(MARKETS)} concurrent_market_tasks={len(MARKETS)} strategies_per_market={len(STRATEGY_MODULES)} process_count=1")
     with ThreadPoolExecutor(max_workers=3, thread_name_prefix="market") as pool:
         futures = {pool.submit(_run_market_task, symbol, shared_fetch): symbol for symbol in MARKETS}
         done, pending = wait(futures, timeout=MARKET_TASK_WARNING_SECONDS)
@@ -285,10 +286,11 @@ def main():
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
     os.environ.setdefault("GLOBAL_ALERT_STATE_PATH", str(ROOT / ".global_alert_state.json"))
-    log(f"CENTRAL_SCANNER_STARTED markets=3 concurrent_tasks=3 strategies=3 processes=1 alert_only=true pid={os.getpid()}")
+    log(f"CENTRAL_SCANNER_STARTED markets={len(MARKETS)} concurrent_tasks={len(MARKETS)} strategies={len(STRATEGY_MODULES)} processes=1 alert_only=true pid={os.getpid()}")
     log("MARKETS XAU/USD,XAG/USD,US500")
     log("OPERATING_SESSIONS XAU/XAG=08:00-17:00 Europe/London US500=09:30-16:00 America/New_York")
     log("TASK_MODEL one_process_three_market_threads isolated_strategy_state=true")
+    log("STRATEGY_SET " + ",".join(STRATEGY_MODULES))
     log("STRATEGY_RULES_UNCHANGED shared_candles=true")
 
     migrate_market_state()
