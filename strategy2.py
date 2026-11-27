@@ -11,9 +11,9 @@ from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
 from trade_advisor import recommend_trade, format_trade_advice
+from watchlist import select_symbols
 
 STATE_PATH = ".strategy2_state.json"
-SYMBOLS = [s.strip() for s in os.getenv("SYMBOLS", "XAU/USD,XAG/USD,US500").split(",") if s.strip()]
 
 
 def _save_state(state):
@@ -255,7 +255,11 @@ def main(symbols=None):
     except (OSError, json.JSONDecodeError):
         state = {}
     errors = []
-    for symbol in (SYMBOLS if symbols is None else symbols):
+    symbols = select_symbols(symbols if symbols is not None else os.getenv("SYMBOLS"))
+    if not symbols:
+        print("No approved markets selected; Strategy 2 cycle skipped.", flush=True)
+        return
+    for symbol in symbols:
         now = datetime.now(timezone.utc)
         try:
             old = state.get(symbol, {})
