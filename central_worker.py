@@ -11,8 +11,10 @@ from pathlib import Path
 from threading import Event, Lock
 from zoneinfo import ZoneInfo
 
+from watchlist import ALLOWED_SYMBOLS
+
 ROOT = Path(__file__).resolve().parent
-MARKETS = ("XAU/USD", "XAG/USD", "US500")
+MARKETS = ALLOWED_SYMBOLS
 STRATEGY_MODULES = ("main", "strategy2", "strategy3")
 STATE_FILES = (".signal_state.json", ".strategy2_state.json", ".strategy3_state.json")
 SCAN_INTERVAL_SECONDS = 60
