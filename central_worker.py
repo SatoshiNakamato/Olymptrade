@@ -159,7 +159,7 @@ def _load_strategy(name, symbol, shared_fetch):
 
 
 def _run_market_task(symbol, shared_fetch):
-    """Run all three strategies for one market; failures do not stop its sibling markets."""
+    """Run this worker’s selected strategies for one market; isolate sibling failures."""
     started = time.monotonic()
     log(f"MARKET_TASK_STARTED {symbol} strategies={len(STRATEGY_MODULES)}")
     failures = []
