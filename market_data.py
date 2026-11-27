@@ -33,6 +33,8 @@ INTERVAL_MAP = {
     "5min": ("5m", 288, 100),
     "1hour": ("1h", 168, 60),
 }
+INTERVAL_MINUTES = {"1min": 1, "5min": 5, "1hour": 60}
+MAX_CANDLE_AGE_MULTIPLIER = 2
 
 
 class MarketDataError(RuntimeError):
@@ -148,6 +150,36 @@ def _download_candles(symbol: str, interval: str) -> pd.DataFrame:
     raise MarketDataError(f"{symbol}: {last_error}; no signal generated")
 
 
+def _validate_freshness(df: pd.DataFrame, interval: str, now=None) -> None:
+    """Reject stale or future-dated candles so strategies fail closed on bad feeds."""
+    if df.empty:
+        raise MarketDataError(f"no candles available for {interval}")
+    latest_open = pd.Timestamp(df["datetime"].iloc[-1])
+    if latest_open.tzinfo is None:
+        latest_open = latest_open.tz_localize("UTC")
+    else:
+        latest_open = latest_open.tz_convert("UTC")
+    current = pd.Timestamp.now(tz="UTC") if now is None else pd.Timestamp(now)
+    if current.tzinfo is None:
+        current = current.tz_localize("UTC")
+    else:
+        current = current.tz_convert("UTC")
+    latest_close = latest_open + pd.Timedelta(minutes=INTERVAL_MINUTES[interval])
+    age = current - latest_close
+    max_age = pd.Timedelta(
+        minutes=INTERVAL_MINUTES[interval] * MAX_CANDLE_AGE_MULTIPLIER
+    )
+    if age < pd.Timedelta(seconds=-30):
+        raise MarketDataError(
+            f"latest {interval} candle is future-dated by {abs(age).total_seconds():.0f}s"
+        )
+    if age > max_age:
+        raise MarketDataError(
+            f"latest {interval} candle is stale ({age.total_seconds() / 60:.1f}m old; "
+            f"maximum {max_age.total_seconds() / 60:.0f}m); no signal generated"
+        )
+
+
 def fetch_candles(
     symbol: str,
     outputsize: int = DEFAULT_OUTPUTSIZE,
@@ -187,4 +219,8 @@ def fetch_candles(
         raise MarketDataError(
             f"{symbol}: only {len(df)} closed {interval} candles available; need at least {minimum}"
         )
+    try:
+        _validate_freshness(df, interval)
+    except MarketDataError as exc:
+        raise MarketDataError(f"{symbol}: {exc}") from None
     return df
