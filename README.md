@@ -30,8 +30,9 @@ See [`PRECIOUS_METALS_STRATEGY.md`](PRECIOUS_METALS_STRATEGY.md) for the separat
 
 ## Session and news filters
 
-- All FX/gold entries are permitted only during 08:00–17:00 Europe/London time, Monday to Friday.
-- XAU/USD and Strategy 3 EUR/USD are blocked from 15 minutes before to 15 minutes after high-impact USD calendar events.
+- XAU/USD and XAG/USD entries are permitted only during 08:00–17:00 Europe/London time, Monday to Friday.
+- US500 entries are permitted only during 09:30–16:00 America/New_York time, Monday to Friday.
+- All three selected markets are blocked from 15 minutes before to 15 minutes after high-impact USD calendar events.
 - The calendar filter fails closed: if the calendar cannot be retrieved or parsed, the relevant entry alerts are skipped.
 - The calendar feed is a third-party source; verify major event times against a trusted economic calendar.
 
@@ -47,9 +48,10 @@ Holding/review windows are estimates based on ATR and target distance, not guara
 
 ## Automation and data
 
-- Voroa runs one central Python worker (`python worker.py`) for all eight markets and all three strategies.
-- The three strategy modules run in one process and share each market's downloaded candle frames during a scan cycle.
-- The worker scans from 00:00 to 20:00 India Standard Time (Asia/Kolkata) and pauses outside that window.
+- Voroa runs one central Python worker (`python worker.py`) for exactly three markets and all three strategies.
+- One Python process launches three concurrent market tasks; each task runs the three strategies sequentially for its market.
+- `watchlist.py` is the authoritative whitelist. Environment-variable overrides and direct strategy calls cannot add markets outside XAU/USD, XAG/USD, and US500.
+- The worker scans during the selected markets' London/New York sessions and pauses when both sessions are closed and no active plans need monitoring.
 - The shared Biquote adapter supplies completed 1-minute, 5-minute and 1-hour candles; 1-minute data is requested only by Strategy 2 when its existing fallback condition is met.
 - The central worker preserves the three existing strategy state files and migrates per-market state from the previous `.voroa_agents` directories without deleting the originals.
 
