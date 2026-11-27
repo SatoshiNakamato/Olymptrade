@@ -33,6 +33,16 @@ def new_york_session_status(now_utc):
     return True, "Inside US cash session"
 
 
+def entry_session_status(symbol, now_utc):
+    """Fail closed unless a selected market is inside its own entry session."""
+    market = str(symbol).upper()
+    if market == "US500":
+        return new_york_session_status(now_utc)
+    if market in {"XAU/USD", "XAG/USD"}:
+        return london_session_status(now_utc)
+    return False, f"Unsupported market: {market}"
+
+
 def _load_calendar_cache():
     try:
         data = json.loads(CALENDAR_CACHE_PATH.read_text(encoding="utf-8"))
