@@ -67,9 +67,11 @@ class CentralScannerTests(unittest.TestCase):
                 active -= 1
             return True
 
-        with patch.dict(sys.modules, {"market_data": fake_market_data}), \\
-             patch.object(scanner, "_run_market_task", side_effect=fake_task), \\
-             patch.object(scanner, "_prepare_market_state"):
+        with (
+            patch.dict(sys.modules, {"market_data": fake_market_data}),
+            patch.object(scanner, "_run_market_task", side_effect=fake_task),
+            patch.object(scanner, "_prepare_market_state"),
+        ):
             self.assertTrue(scanner.run_cycle())
 
         self.assertEqual(set(task_calls), set(scanner.MARKETS))
