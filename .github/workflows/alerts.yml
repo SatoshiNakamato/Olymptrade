@@ -75,8 +75,8 @@ jobs:
         run: pip install -r requirements.txt
       - name: Check Python syntax
         run: python -m compileall -q .
-      - name: Test eight independent Voroa market agents and isolated state
-        run: python -m unittest -v test_worker.py test_market_agent.py
+      - name: Test single-process central scanner, shared market feed and state migration
+        run: python -m unittest -v test_worker.py
       - name: Test atomic scanner state and market entry filters
         run: python -m unittest -v test_strategy_state.py
       - name: Test pandas-free trade sizing suggestions
