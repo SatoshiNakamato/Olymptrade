@@ -303,7 +303,9 @@ def main():
             if was_active:
                 log("MARKET_SESSIONS_CLOSED; scanning paused until next London or New York open")
             was_active = False
-            delay = min(300.0, seconds_until_next_start())
+            # Sleep directly until the next scheduled session; the event remains interruptible.
+            # Avoid waking every five minutes throughout the overnight/weekend idle period.
+            delay = seconds_until_next_start()
             next_open = datetime.now(timezone.utc) + timedelta(seconds=delay)
             log(
                 f"IDLE_WAIT reason=no_open_sessions_no_active_plans "
