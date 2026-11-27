@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 
 from market_data import fetch_candles
-from market_filters import entry_session_status, usd_high_impact_news_status
+from market_filters import strategy3_entry_session_status, usd_high_impact_news_status
 from plan_notifications import monitor_and_notify
 from email_alerts import send_tp1_alert, send_exit_alert
 from alert_dedupe import is_duplicate, record_sent, send_if_not_duplicate
@@ -228,7 +228,7 @@ def main(symbols=None):
             # Do not fetch or analyze a market that is outside its entry session.
             # Existing plans remain eligible for monitoring outside entry sessions.
             if not active:
-                in_session, reason = entry_session_status(symbol, now)
+                in_session, reason = strategy3_entry_session_status(symbol, now)
                 if not in_session:
                     print(f"Strategy 3 {symbol}: WAIT — {reason}")
                     continue
@@ -270,7 +270,7 @@ def main(symbols=None):
             continue
 
         detected_at = datetime.now(timezone.utc)
-        in_session, reason = entry_session_status(symbol, detected_at)
+        in_session, reason = strategy3_entry_session_status(symbol, detected_at)
         if not in_session:
             print(f"Strategy 3 {symbol}: entry suppressed at send time — {reason}")
             continue
